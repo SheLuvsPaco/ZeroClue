@@ -437,12 +437,12 @@ export const authApi = {
   
   async loadCreds(): Promise<{ device_id: string; device_auth: string } | null> {
     const { platform } = await import('./bridge');
-    
+
     if (platform.isWeb) {
       const stored = localStorage.getItem('zerochat_web_creds');
       return stored ? JSON.parse(stored) : null;
     }
-    
+
     try {
       const result = await invoke<{ device_id: string; device_auth: string }>("load_creds");
       // Tauri returns credentials or throws - if it throws, return null
@@ -453,7 +453,31 @@ export const authApi = {
       return null;
     }
   },
-  
+
+  async clearCreds(): Promise<void> {
+    const { platform } = await import('./bridge');
+
+    // Clear web storage
+    if (platform.isWeb) {
+      try {
+        localStorage.removeItem('zerochat_web_creds');
+        console.log('[AUTH] Cleared web credentials');
+      } catch (e) {
+        console.warn('[AUTH] Failed to clear web credentials:', e);
+      }
+      return;
+    }
+
+    // Clear Tauri/Android credentials
+    try {
+      await invoke<void>("clear_creds", {});
+      console.log('[AUTH] Cleared native credentials');
+    } catch (e) {
+      console.warn('[AUTH] Failed to clear native credentials:', e);
+      // Ignore errors - clearCreds might not be implemented on all platforms
+    }
+  },
+
   async setBase(base: string): Promise<void> {
     await invoke<string>("set_base", { base });
   },

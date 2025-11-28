@@ -170,10 +170,8 @@ export function useAuth() {
     try {
       await authApi.signup(username, password, inviteToken, inviteBaseUrl);
       console.log('[useAuth] Signup API call succeeded, checking auth...');
-      // Wait a bit for credentials to be stored
-      await new Promise(resolve => setTimeout(resolve, 100));
       await checkAuth();
-      console.log('[useAuth] Auth check completed');
+      console.log('[useAuth] ✅ Signup completed successfully');
     } catch (error) {
       console.error('[useAuth] Signup failed:', error);
       throw error;
@@ -184,47 +182,18 @@ export function useAuth() {
   const login = useCallback(async (username: string, password: string) => {
     console.log('[useAuth] ========== LOGIN HOOK CALLED ==========');
     console.log('[useAuth] Username:', username);
-    console.log('[useAuth] Current state before login:', {
-      isAuthenticated: authState.isAuthenticated,
-      isLoading: authState.isLoading,
-      hasUser: !!authState.user,
-    });
-    const startTime = Date.now();
-    
+
     try {
-      console.log('[useAuth] Step 1: Calling authApi.login()...');
+      console.log('[useAuth] Calling authApi.login()...');
       await authApi.login(username, password);
-      const loginDuration = Date.now() - startTime;
-      console.log(`[useAuth] ✅ Step 1 completed: authApi.login() finished in ${loginDuration}ms`);
-      
-      console.log('[useAuth] Step 2: Waiting 100ms for credentials to be stored...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      console.log('[useAuth] Step 3: Calling checkAuth() to verify credentials...');
+      console.log('[useAuth] ✅ Login API call successful');
+
+      console.log('[useAuth] Calling checkAuth() to update state...');
       await checkAuth();
-      const totalDuration = Date.now() - startTime;
-      console.log(`[useAuth] ✅ Step 3 completed: checkAuth() finished in ${totalDuration}ms`);
-      
-      // Log state AFTER checkAuth completes
-      // Note: setState is async, so we need to wait for React to process the update
-      // The useEffect above will log when state actually changes
-      console.log('[useAuth] Waiting for React to process state update...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Read current state (might still be stale due to closure)
-      console.log('[useAuth] State from closure (may be stale):', {
-        isAuthenticated: authState.isAuthenticated,
-        isLoading: authState.isLoading,
-        hasUser: !!authState.user,
-        username: authState.user?.username,
-      });
-      console.log('[useAuth] Note: Check the [useAuth] 🔄 State changed log above to see actual state');
-      
-      console.log(`[useAuth] ✅ Login hook completed successfully in ${totalDuration}ms`);
+      console.log('[useAuth] ✅ Login completed successfully');
       console.log('[useAuth] ========== LOGIN HOOK ENDED ==========');
     } catch (error: any) {
-      const duration = Date.now() - startTime;
-      console.error(`[useAuth] ❌ Login hook failed after ${duration}ms:`, error);
+      console.error('[useAuth] ❌ Login failed:', error);
       console.error('[useAuth] Error details:', {
         message: error?.message,
         stack: error?.stack,
@@ -233,7 +202,7 @@ export function useAuth() {
       console.log('[useAuth] ========== LOGIN HOOK ENDED (ERROR) ==========');
       throw error;
     }
-  }, [checkAuth, authState]);
+  }, [checkAuth]);
 
   // Provision with token (from invite link)
   const provision = useCallback(async (token: string, baseUrl?: string) => {
@@ -247,29 +216,25 @@ export function useAuth() {
 
   // Log out
   const logout = useCallback(async () => {
-    // Clear credentials from localStorage (web mode)
+    console.log('[useAuth] Logging out...');
+
+    // Clear credentials via API (handles all platforms)
     try {
-      localStorage.removeItem('zerochat_web_creds');
+      await authApi.clearCreds();
+      console.log('[useAuth] Credentials cleared');
     } catch (e) {
-      console.warn('Failed to clear localStorage:', e);
+      console.warn('[useAuth] Failed to clear credentials:', e);
+      // Continue with logout even if clear fails
     }
-    
-    // Clear credentials via bridge (Tauri/Android)
-    try {
-      const { platform } = await import('../services/bridge');
-      if (!platform.isWeb) {
-        const { invoke } = await import('../services/bridge');
-        await invoke('clear_creds', {});
-      }
-    } catch (e) {
-      // Bridge method might not exist, that's okay
-    }
-    
+
+    // Update state to unauthenticated
     setAuthState({
       isAuthenticated: false,
       isLoading: false,
       user: null,
     });
+
+    console.log('[useAuth] ✅ Logout completed');
   }, []);
 
   // Return state and methods

@@ -1,6 +1,5 @@
 use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -54,12 +53,14 @@ pub async fn signup(
         ));
     }
 
-    // Hash password with SHA256
-    let mut hasher = Sha256::new();
-    hasher.update(req.password.as_bytes());
-    let password_hash = hasher.finalize().to_vec();
-    
-    tracing::debug!("Signup: Password hash length: {}", password_hash.len());
+    // Hash password with bcrypt (secure password hashing with salt and key stretching)
+    let password_hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)
+        .map_err(|e| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to hash password: {e}")
+        ))?;
+
+    tracing::debug!("Signup: Password hash created with bcrypt");
 
     // Check if user already exists with this username
     let existing: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(
@@ -129,23 +130,15 @@ pub async fn login(
     use time::{Duration, OffsetDateTime};
 
     let uname = req.username.to_lowercase();
-    
+
     tracing::info!("🔐 [LOGIN] ========== LOGIN REQUEST RECEIVED ==========");
     tracing::info!("🔐 [LOGIN] Username: {}", uname);
-    tracing::info!("🔐 [LOGIN] Password length: {} bytes", req.password.len());
-
-    // Hash password for comparison with SHA256
-    let mut hasher = Sha256::new();
-    hasher.update(req.password.as_bytes());
-    let password_hash = hasher.finalize().to_vec();
-    
-    tracing::info!("🔐 [LOGIN] Password hash computed: {} bytes", password_hash.len());
 
     // Find user and verify password
     #[derive(sqlx::FromRow)]
     struct UserRow {
         id: Uuid,
-        password_hash: Option<Vec<u8>>,
+        password_hash: Option<String>,
     }
 
     tracing::info!("🔐 [LOGIN] Querying database for user: {}", uname);
@@ -170,19 +163,21 @@ pub async fn login(
     
     tracing::info!("🔐 [LOGIN] ✅ User found: {} (id: {})", uname, user.id);
 
-    // Check password
+    // Verify password using bcrypt
     tracing::info!("🔐 [LOGIN] Verifying password...");
     match &user.password_hash {
         Some(ref hash) => {
-            tracing::info!("🔐 [LOGIN] Stored hash length: {} bytes", hash.len());
-            // Compare byte arrays
-            if hash.as_slice() == password_hash.as_slice() {
-                tracing::info!("🔐 [LOGIN] ✅ Password matches!");
+            // Use bcrypt to securely verify the password
+            let valid = bcrypt::verify(&req.password, hash)
+                .map_err(|e| {
+                    tracing::error!("🔐 [LOGIN] ❌ bcrypt verification error: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Password verification failed".to_string())
+                })?;
+
+            if valid {
+                tracing::info!("🔐 [LOGIN] ✅ Password verified successfully!");
             } else {
-                // Password doesn't match - log for debugging
                 tracing::warn!("🔐 [LOGIN] ❌ Password mismatch for user: {}", uname);
-                tracing::debug!("🔐 [LOGIN] Hash comparison failed - stored: {:?}, provided: {:?}", 
-                    &hash[..8.min(hash.len())], &password_hash[..8.min(password_hash.len())]);
                 return Err((
                     StatusCode::UNAUTHORIZED,
                     "Invalid username or password".to_string(),
@@ -190,7 +185,7 @@ pub async fn login(
             }
         }
         None => {
-            // User exists but has no password - this shouldn't happen with new system
+            // User exists but has no password - this shouldn't happen
             tracing::error!("🔐 [LOGIN] ❌ User {} has no password hash set", uname);
             return Err((
                 StatusCode::UNAUTHORIZED,
