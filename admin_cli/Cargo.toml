@@ -1,0 +1,18 @@
+[package]
+name = "admin_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+qrcode = { version = "0.13", features = ["image"] }
+base64 = "0.22"
+termcolor = "1"
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+urlencoding = "2"

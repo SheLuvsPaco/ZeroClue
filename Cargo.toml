@@ -1,0 +1,3 @@
+[workspace]
+members = ["server","core","proto","tooling","client_demo","mls_demo","admin_cli","zerochat-desktop/src-tauri"]
+resolver = "2"

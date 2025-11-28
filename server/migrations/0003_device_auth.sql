@@ -1,0 +1,3 @@
+ALTER TABLE devices
+  ADD COLUMN IF NOT EXISTS auth_token_hash BYTEA,
+  ADD COLUMN IF NOT EXISTS token_created_at TIMESTAMPTZ;

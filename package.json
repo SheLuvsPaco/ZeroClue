@@ -1,0 +1,13 @@
+{
+  "name": "zerochat-root",
+  "private": true,
+  "scripts": {
+    "build:web": "cd zerochat-desktop && npm run build",
+    "android:sync": "node scripts/copy-ui-to-android.js",
+    "android:build": "bash scripts/build_android_apk.sh",
+    "android:build:debug": "cd zerochat-android && ./gradlew assembleDebug",
+    "android:apk:export": "mkdir -p server/static/downloads/android && cp zerochat-android/app/build/outputs/apk/debug/app-debug.apk server/static/downloads/android/ZeroChat-latest.apk"
+  }
+}
+
+

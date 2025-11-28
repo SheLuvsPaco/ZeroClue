@@ -1,0 +1,21 @@
+<resources>
+  <color name="colorPrimary">#0F62FE</color>
+  <color name="colorPrimaryVariant">#0043CE</color>
+  <color name="colorOnPrimary">#FFFFFF</color>
+
+  <color name="colorSecondary">#03DAC6</color>
+  <color name="colorSecondaryVariant">#018786</color>
+  <color name="colorOnSecondary">#000000</color>
+
+  <color name="colorBackground">#121212</color>
+  <color name="colorOnBackground">#FFFFFF</color>
+  <color name="colorSurface">#1E1E1E</color>
+  <color name="colorOnSurface">#FFFFFF</color>
+
+  <color name="purple_500">#3B82F6</color>
+  <color name="purple_700">#1D4ED8</color>
+  <color name="teal_200">#03DAC5</color>
+
+  <color name="black">#000000</color>
+  <color name="white">#FFFFFF</color>
+</resources>

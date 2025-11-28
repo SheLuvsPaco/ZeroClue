@@ -1,0 +1,447 @@
+================================================================================
+ZEROCHAT PROJECT - CURRENT STATE ASSESSMENT
+Generated: $(date)
+================================================================================
+
+1. WHAT'S RUNNING RIGHT NOW?
+================================================================================
+
+Backend (Rust server):
+  ✅ IS RUNNING: Yes (process ID 47330)
+  📍 COMMAND: `cargo run -p server` or `set -a && source .env && set +a && cargo run -p server`
+  🌐 PORT: http://127.0.0.1:8080 (default Axum port)
+  📂 LOCATION: /Users/sheluvspaco/Desktop/ZeroClue/server/
+  🔍 STATUS: Server process is running in background
+  📝 NOTE: Can check if accessible by visiting http://127.0.0.1:8080 in browser
+            (should show server response or static files)
+
+Frontend (React/Vite dev server):
+  ✅ IS RUNNING: Yes (process ID 48690 - Vite, 48400 - Tauri)
+  📍 COMMAND: `cd zerochat-desktop && npm run dev:app` (starts both Vite + Tauri)
+  🌐 PORT: http://localhost:1420 (Vite dev server for Tauri)
+  📂 LOCATION: /Users/sheluvspaco/Desktop/ZeroClue/zerochat-desktop/
+  🔍 STATUS: Both Vite dev server and Tauri wrapper are running
+  📝 NOTE: Tauri dev mode uses Vite on port 1420, not standard 5173
+
+Database (PostgreSQL):
+  ✅ IS RUNNING: Yes (via Docker)
+  📍 COMMAND: `make up` or `docker-compose up -d`
+  🌐 PORT: 55432 (host) -> 5432 (container)
+  📂 DATABASE NAME: appdb
+  👤 CREDENTIALS: 
+     - User: app
+     - Password: app
+     - Database: appdb
+  🔍 STATUS: Container is running (zeroclue-db-1)
+  📝 NOTE: Check users with: `psql -h localhost -p 55432 -U app -d appdb`
+
+Other Services (Docker):
+  ✅ Redis: Running on port 6379 (zeroclue-redis-1)
+  ✅ MinIO: Running on ports 9000 (API) and 9001 (Console) (zeroclue-minio-1)
+
+
+2. DESKTOP APP (TAURI)
+================================================================================
+
+✅ CAN LAUNCH: Yes, currently running
+📍 COMMAND: `cd zerochat-desktop && npm run dev:app`
+🔍 STATUS: Tauri dev process is active (PID 48400)
+
+WHAT YOU SHOULD SEE:
+  - When app opens, you should see one of:
+    1. OnboardingScreen (if not logged in) - Welcome screen with Sign Up / Log In buttons
+    2. Main App (if logged in) - Chat list sidebar + main chat view
+    3. Loading screen (briefly while checking auth)
+
+CURRENT STATE (Based on Recent Changes):
+  - ✅ React UI is implemented with:
+     - OnboardingScreen.tsx (signup/login)
+     - AppShell.tsx (main layout)
+     - ChatList.tsx (chat sidebar)
+     - ChatView.tsx (message view)
+     - SettingsMenu.tsx (profile, invite link, logout)
+  
+  - ⚠️ KNOWN ISSUE: Login state transition
+     - Login API succeeds (200 OK)
+     - Credentials are stored
+     - User info is fetched
+     - BUT: UI sometimes doesn't update from OnboardingScreen to main app
+     - STATUS: We added extensive logging to debug this (see useAuth.ts)
+
+  - 🔍 DEBUGGING ADDED:
+     - [checkAuth] logs showing state updates
+     - [useAuth] 🔄 logs when state actually changes
+     - [AppShell] logs showing what's being rendered
+     - Console will show full authentication flow
+
+
+3. ANDROID APP (APK)
+================================================================================
+
+✅ APK EXISTS: Yes
+📍 LOCATION: /Users/sheluvspaco/Desktop/ZeroClue/zerochat-android/app/build/outputs/apk/debug/app-debug.apk
+📦 SIZE: File exists (check with `ls -lh` for size)
+
+LAST BUILD STATUS:
+  ✅ BUILD SUCCESSFUL (from previous session)
+  📍 BUILD COMMAND: `cd zerochat-android && ./gradlew assembleDebug`
+  🔧 JAVA VERSION: Java 21 (temurin-25.jdk detected)
+
+WHAT HAPPENS WHEN TESTED:
+  ⚠️ UNKNOWN - Need to test on device
+  📝 EXPECTED BEHAVIOR:
+     - APK installs successfully
+     - App opens to OnboardingScreen (same as desktop)
+     - Sign up / Log in buttons work
+     - Deep linking for invite links should work (zerochat://provision?token=...)
+
+CURRENT APK STATUS:
+  - ✅ Contains latest React UI (copied from zerochat-desktop/dist)
+  - ✅ Has ZeroChatBridge.kt with all necessary methods
+  - ✅ Deep linking configured in AndroidManifest.xml
+  - ⚠️ May need rebuild if UI was updated since last build
+
+
+4. AUTHENTICATION & LOGIN FLOW
+================================================================================
+
+CURRENT STATUS:
+  ⚠️ PARTIALLY WORKING - State update issue
+
+WHAT WORKS:
+  ✅ Sign up API call succeeds
+  ✅ Login API call succeeds (200 OK)
+  ✅ Credentials are stored (localStorage for web, SharedPrefs for Android, Tauri secure store)
+  ✅ User info is fetched from /api/me
+  ✅ Backend authentication is working
+
+WHAT DOESN'T WORK:
+  ⚠️ UI state update after successful login
+     - After login, isAuthenticated should become true
+     - AppShell should re-render and show main app
+     - Sometimes this transition doesn't happen
+     - STATUS: Added extensive logging to debug
+
+RECENT FIXES APPLIED:
+  ✅ Enhanced state update logging in useAuth.ts
+  ✅ Added setState callback logging
+  ✅ Added useEffect to log when state actually changes
+  ✅ Added AppShell render decision logging
+  ✅ Fixed SettingsMenu to load device_id from credentials
+
+CAN YOU LOG IN NOW?
+  🔍 TEST NEEDED: 
+     - Try logging in from desktop app
+     - Watch console logs for:
+       * [checkAuth] State update initiated
+       * [useAuth] 🔄 STATE ACTUALLY CHANGED
+       * [AppShell] AUTH STATE RECEIVED
+       * [AppShell] Rendering: Main app
+     - If logs show state change but UI doesn't update, it's a React rendering issue
+     - If logs don't show state change, it's a setState issue
+
+CAN YOU SIGN UP?
+  ✅ YES - Sign up should work
+  📝 FLOW:
+     1. Enter username and password
+     2. Click "Sign Up"
+     3. API creates user account
+     4. Provisions device
+     5. Stores credentials
+     6. Should transition to main app (same issue as login)
+
+
+5. INVITE LINK FLOW
+================================================================================
+
+CAN YOU GENERATE INVITE LINKS?
+  ✅ YES - From Settings menu
+  📍 LOCATION: Settings menu → "Create Invite Link" button
+  🔍 REQUIREMENTS: Must be authenticated (logged in)
+
+INVITE LINK FORMAT:
+  📝 EXPECTED: http://192.168.1.84:8080/invite.html?token=...&base=...&inviter=...
+  📝 OR: zerochat://provision?token=...&base=...&inviter=... (for deep linking)
+
+WHAT HAPPENS WHEN CLICKED:
+  📱 ON ANDROID:
+     - Should download APK from server
+     - Should open app with deep link
+     - Should call window.__zerochatProvision(token, base, inviter)
+     - Should show signup form with invite token stored
+     - When user signs up, should use invite token to link to inviter
+  
+  🌐 ON WEB:
+     - Opens invite.html page
+     - Shows download links for APK/DMG
+     - Can manually copy token and use in app
+
+CURRENT IMPLEMENTATION:
+  ✅ useInviteToken.ts hook sets up window.__zerochatProvision handler
+  ✅ OnboardingScreen.tsx checks for invite token
+  ✅ Signup flow accepts inviteToken parameter
+  ✅ API uses invite token in provision/redeem if provided
+  ⚠️ NEEDS TESTING: Full end-to-end flow on Android device
+
+
+6. MESSAGING / CHAT
+================================================================================
+
+HAVE YOU SENT MESSAGES?
+  ❓ UNKNOWN - Need to test
+
+DO YOU SEE CHAT INTERFACE?
+  ✅ YES - UI is implemented:
+     - ChatList.tsx shows list of friends/chats
+     - ChatView.tsx shows messages
+     - Composer.tsx for sending messages
+     - Message.tsx for displaying messages
+
+CAN YOU SEE CONTACTS/FRIENDS?
+  ⚠️ DEPENDS ON AUTHENTICATION
+  📝 FLOW:
+     1. Must be logged in
+     2. ChatList calls friendsApi.list()
+     3. Shows friends as chat rows
+     4. Empty list is valid (new users have no friends yet)
+
+DO YOU HAVE TEST ACCOUNTS?
+  ❓ UNKNOWN - Check database:
+     `psql -h localhost -p 55432 -U app -d appdb -c "SELECT username, created_at FROM users;"`
+
+MESSAGING STATUS:
+  ✅ Backend APIs exist:
+     - GET /api/messages?chatId=...&cursor=...
+     - POST /api/messages (send message)
+  ✅ Frontend UI exists:
+     - ChatView component
+     - Composer component
+     - Message component
+  ⚠️ NEEDS TESTING: Actual message sending/receiving
+
+
+7. CODEBASE STRUCTURE
+================================================================================
+
+ROOT DIRECTORY: /Users/sheluvspaco/Desktop/ZeroClue
+
+FOLDERS:
+  ✅ server/          - Rust backend (Axum server)
+  ✅ zerochat-desktop/ - Tauri desktop app + React UI
+  ✅ zerochat-android/ - Android WebView app
+  ✅ core/            - Shared Rust code
+  ✅ proto/            - Protocol definitions
+  ✅ scripts/          - Build and utility scripts
+  ✅ server/static/    - Static files (downloads, invite.html)
+
+KEY FILES:
+  📄 docker-compose.yml - Docker services config
+  📄 Makefile - Common commands (make up, make down, etc.)
+  📄 Cargo.toml - Root workspace config
+  📄 .env - Environment variables (not in git)
+
+DESKTOP APP STRUCTURE:
+  zerochat-desktop/
+    ├── src/
+    │   ├── App.tsx - Root component
+    │   ├── ui/ - React components
+    │   │   ├── AppShell.tsx
+    │   │   ├── OnboardingScreen.tsx
+    │   │   ├── ChatList.tsx
+    │   │   ├── ChatView.tsx
+    │   │   ├── SettingsMenu.tsx
+    │   │   └── ... (other UI components)
+    │   ├── hooks/ - React hooks
+    │   │   ├── useAuth.ts - Authentication state
+    │   │   ├── useChatList.ts - Chat list management
+    │   │   ├── useInviteToken.ts - Invite link handling
+    │   │   └── ... (other hooks)
+    │   ├── services/ - API and bridge
+    │   │   ├── api.ts - API client
+    │   │   └── bridge.ts - Platform bridge (Tauri/Android/Web)
+    │   └── state/ - Zustand stores
+    │       ├── chatListStore.ts
+    │       └── messagesStore.ts
+    └── src-tauri/ - Tauri backend (Rust)
+
+ANDROID APP STRUCTURE:
+  zerochat-android/
+    └── app/src/main/
+        ├── java/com/zerochat/app/
+        │   ├── MainActivity.kt - Main activity + ZeroChatBridge
+        │   └── SharedPrefsHelper.kt - Credential storage
+        └── assets/www/ - Web UI (copied from zerochat-desktop/dist)
+
+
+8. CURRENT ERRORS / BLOCKERS
+================================================================================
+
+PRIMARY BLOCKER:
+  ⚠️ LOGIN STATE NOT UPDATING AFTER SUCCESSFUL LOGIN
+     - Login API succeeds
+     - Credentials stored
+     - User info fetched
+     - But UI doesn't transition from OnboardingScreen to main app
+     - STATUS: Added extensive logging, needs testing to identify root cause
+
+POTENTIAL ISSUES:
+  ⚠️ React state batching - setState might be batched incorrectly
+  ⚠️ Closure issue - authState might be stale in login callback
+  ⚠️ Component not re-rendering - AppShell might not be receiving updates
+
+OTHER KNOWN ISSUES:
+  ⚠️ SettingsMenu device_id - Fixed to load from credentials as fallback
+  ⚠️ Friends list empty array warning - Fixed to not warn on empty arrays
+  ⚠️ Invite token handling - Implemented but needs end-to-end testing
+
+NO CRITICAL ERRORS:
+  ✅ No build errors
+  ✅ No compilation errors
+  ✅ No runtime crashes (that we know of)
+  ✅ Server starts successfully
+  ✅ Database migrations applied
+
+
+9. WHAT DO WE NEED TO ACHIEVE TODAY?
+================================================================================
+
+PRIORITY 1: FIX LOGIN STATE UPDATE ⚠️ CRITICAL
+  - Test login flow with new logging
+  - Identify why UI doesn't update after successful login
+  - Fix the state update mechanism
+  - Verify transition from OnboardingScreen to main app works
+
+PRIORITY 2: TEST ANDROID APK
+  - Install APK on Android device
+  - Test signup flow
+  - Test login flow
+  - Test invite link deep linking
+  - Verify UI matches desktop version
+
+PRIORITY 3: END-TO-END INVITE FLOW
+  - Generate invite link from Settings
+  - Click invite link on Android
+  - Verify APK downloads
+  - Verify app opens with deep link
+  - Verify signup uses invite token
+  - Verify user is linked to inviter
+
+PRIORITY 4: MESSAGING FUNCTIONALITY
+  - Create test accounts
+  - Add friends (or use invite flow)
+  - Send messages between accounts
+  - Verify messages appear in chat
+  - Test real-time updates (WebSocket/polling)
+
+PRIORITY 5: BUILD FRESH ARTIFACTS
+  - Rebuild Android APK with latest UI
+  - Rebuild macOS DMG with latest UI
+  - Copy to server/static/downloads/
+  - Verify downloads work from invite.html
+
+
+10. QUICK COMMANDS REFERENCE
+================================================================================
+
+START EVERYTHING:
+  # Terminal 1: Docker services
+  cd /Users/sheluvspaco/Desktop/ZeroClue
+  make up
+
+  # Terminal 2: Rust server
+  cd /Users/sheluvspaco/Desktop/ZeroClue
+  set -a && source .env && set +a && cargo run -p server
+
+  # Terminal 3: Desktop app
+  cd /Users/sheluvspaco/Desktop/ZeroClue/zerochat-desktop
+  npm run dev:app
+
+BUILD ANDROID APK:
+  cd /Users/sheluvspaco/Desktop/ZeroClue/zerochat-android
+  ./gradlew assembleDebug
+
+BUILD MACOS DMG:
+  cd /Users/sheluvspaco/Desktop/ZeroClue/zerochat-desktop
+  npm run build:mac
+
+BUILD ALL AND COPY:
+  cd /Users/sheluvspaco/Desktop/ZeroClue
+  ./scripts/build-all.sh
+
+CHECK DATABASE:
+  psql -h localhost -p 55432 -U app -d appdb
+
+CHECK RUNNING PROCESSES:
+  ps aux | grep -E "(cargo|server|tauri|vite)" | grep -v grep
+
+STOP SERVICES:
+  make down  # Stops Docker containers
+
+
+11. TESTING CHECKLIST
+================================================================================
+
+DESKTOP APP:
+  [ ] Open app - shows OnboardingScreen
+  [ ] Sign up with new account - creates account and logs in
+  [ ] Log in with existing account - logs in successfully
+  [ ] After login, UI transitions to main app (ChatList visible)
+  [ ] Settings menu opens and shows correct username
+  [ ] Settings menu shows device_id
+  [ ] Create invite link works
+  [ ] Logout works and returns to OnboardingScreen
+
+ANDROID APP:
+  [ ] APK installs successfully
+  [ ] App opens to OnboardingScreen
+  [ ] Sign up works
+  [ ] Login works
+  [ ] UI transitions after login
+  [ ] Deep link handling works (zerochat://provision)
+  [ ] Invite token is stored and used during signup
+
+INVITE FLOW:
+  [ ] Generate invite link from Settings
+  [ ] Click invite link on Android device
+  [ ] APK downloads
+  [ ] App opens with deep link
+  [ ] Signup form shows (with invite token)
+  [ ] Signup completes and links to inviter
+  [ ] New user appears in inviter's friends list
+
+MESSAGING:
+  [ ] Create two test accounts
+  [ ] Add as friends (or use invite)
+  [ ] Open chat
+  [ ] Send message
+  [ ] Message appears in chat
+  [ ] Message appears on other device (if testing)
+
+
+12. NEXT STEPS
+================================================================================
+
+IMMEDIATE (Today):
+  1. Test login flow with new logging
+  2. Check console logs to identify state update issue
+  3. Fix the state transition problem
+  4. Test on Android device
+
+SHORT TERM (This Week):
+  1. Complete end-to-end invite flow testing
+  2. Fix any issues found
+  3. Test messaging between accounts
+  4. Build fresh APK and DMG
+
+LONG TERM:
+  1. Add WebSocket real-time updates
+  2. Implement message reactions
+  3. Add file attachments
+  4. Add link previews
+  5. Polish UI/UX
+
+
+================================================================================
+END OF ASSESSMENT
+================================================================================
+

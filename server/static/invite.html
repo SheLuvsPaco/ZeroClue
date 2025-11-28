@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Join ZeroChat</title>
+  <style>
+    :root { --bg:#0b0e13; --card:#131821; --text:#e6ebf2; --muted:#9fb0c7; --accent:#3b82f6; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial}
+    .wrap{max-width:760px;margin:32px auto;padding:20px}
+    .card{background:var(--card);border-radius:14px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+    h1{margin:0 0 8px} .muted{color:var(--muted);font-size:14px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+    .btn{appearance:none;border:0;border-radius:10px;padding:12px 16px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}
+    .btn.outline{background:transparent;border:1px solid var(--muted);color:var(--text)}
+    .input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #243040;background:#0f1420;color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .notice{margin-top:12px;padding:10px;border-radius:8px;background:#0f1420;border:1px dashed #243040;color:var(--muted)}
+    .hidden{display:none}
+    .qr{background:#fff;border-radius:10px;padding:12px;display:inline-block}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.5/build/qrcode.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Join ZeroChat</h1>
+      <div class="muted">Use this invite on your computer to finish setup.</div>
+      <div id="iab" class="notice hidden">
+        Looks like you opened this inside an in-app browser (Instagram/Facebook, etc).  
+        Tap the menu ••• and choose <b>Open in Chrome/Edge/Safari</b>, then try again.
+      </div>
+      <div class="row" id="actions">
+        <a id="open" class="btn" href="zerochat://provision?token={{TOKEN}}&base={{BASE}}{{INVITER_PART}}">Open in ZeroChat</a>
+        <a id="downloadMac" class="btn outline" href="/download/macos/latest" download>Download for macOS</a>
+        <a id="downloadWin" class="btn outline hidden" href="/download/windows/latest" download>Download for Windows</a>
+        <a id="downloadAndroid" class="btn outline hidden" href="/download/android/latest" download>Download for Android</a>
+        <noscript>
+          <p>
+            <a href="/download/macos/latest">Direct download (macOS)</a> ·
+            <a href="/download/windows/latest">Direct download (Windows)</a> ·
+            <a href="/download/android/latest">Direct download (Android)</a>
+          </p>
+        </noscript>
+      </div>
+      <div class="notice" id="rawParams">
+        <div><strong>Token:</strong> <code id="rawToken"></code></div>
+        <div style="margin-top:4px;"><strong>Base:</strong> <code id="rawBase"></code></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <input id="deeplink" class="input" readonly style="display:none" />
+        <button id="copyBtn" class="btn outline">Copy Link</button>
+      </div>
+      <div class="row" style="align-items:center">
+        <div id="qr" class="qr"></div>
+        <div class="muted">Scan with your desktop to open the invite.</div>
+      </div>
+    </div>
+  </div>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token') || '';
+  const base = params.get('base') || (location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : ''));
+  const inviter = params.get('inviter') || '';
+  
+  // Desktop / macOS deep link (Tauri)
+  const schemeUrl = `zerochat://provision?token=${encodeURIComponent(token)}&base=${encodeURIComponent(base)}${inviter ? `&inviter=${encodeURIComponent(inviter)}` : ''}`;
+  // Android deep link (native WebView app)
+  const androidScheme = `zerochat://invite?token=${encodeURIComponent(token)}&base=${encodeURIComponent(base)}${inviter ? `&inviter=${encodeURIComponent(inviter)}` : ''}`;
+  const ua = navigator.userAgent || '';
+  const btnMac = document.getElementById('downloadMac');
+  const btnWin = document.getElementById('downloadWin');
+  const btnAndroid = document.getElementById('downloadAndroid');
+
+  const macUrl = '/download/macos/latest';
+  const winUrl = '/download/windows/latest';
+  const androidUrl = '/download/android/latest';
+
+  const isAndroid = /Android/i.test(ua);
+  const isWindows = /Windows NT/i.test(ua);
+  const isMac = /Macintosh|Mac OS X/i.test(ua);
+
+  if (isAndroid) {
+    // On Android: show Android button, hide desktop buttons
+    if (btnMac) btnMac.classList.add('hidden');
+    if (btnWin) btnWin.classList.add('hidden');
+    if (btnAndroid) {
+      btnAndroid.classList.remove('hidden');
+      btnAndroid.setAttribute('href', androidUrl);
+    }
+
+    // Try opening the Android app
+    setTimeout(() => {
+      window.location.href = androidScheme;
+    }, 0);
+
+    // After 500ms, if app didn't take over (tab likely still visible), start APK download
+    setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        window.location.href = androidUrl;
+      }
+    }, 500);
+  } else {
+    // Desktop: show appropriate buttons
+    if (btnMac && isMac) {
+      btnMac.classList.remove('hidden');
+      btnMac.setAttribute('href', macUrl);
+    }
+    if (btnWin && isWindows) {
+      btnWin.classList.remove('hidden');
+      btnWin.setAttribute('href', winUrl);
+    }
+    // If UA is unknown (e.g. Linux desktop), just show both desktop buttons
+    if (!isMac && !isWindows) {
+      if (btnMac) {
+        btnMac.classList.remove('hidden');
+        btnMac.setAttribute('href', macUrl);
+      }
+      if (btnWin) {
+        btnWin.classList.remove('hidden');
+        btnWin.setAttribute('href', winUrl);
+      }
+    }
+  }
+  
+  // Show raw token/base for manual copy
+  const rawTokenEl = document.getElementById('rawToken');
+  const rawBaseEl = document.getElementById('rawBase');
+  if (rawTokenEl) rawTokenEl.textContent = token || '(none)';
+  if (rawBaseEl) rawBaseEl.textContent = base || '(none)';
+
+  // Render QR code if element exists
+  const qrEl = document.getElementById('qr');
+  if (qrEl && token) {
+    QRCode.toCanvas(qrEl, schemeUrl, {width:140}, () => {});
+  }
+  
+  // Update deeplink input if it exists
+  const deeplinkEl = document.getElementById('deeplink');
+  if (deeplinkEl) {
+    deeplinkEl.value = schemeUrl;
+  }
+  
+  // In-app browser detection
+  const isInApp = /Instagram|FBAN|FBAV|FB_IAB|Line\/|Twitter|MicroMessenger/i.test(navigator.userAgent);
+  const iabNotice = document.getElementById('iab');
+  if (isInApp && iabNotice) {
+    iabNotice.classList.remove('hidden');
+  }
+  
+  // Copy button
+  const copyBtn = document.getElementById('copyBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(schemeUrl);
+        const prep = document.getElementById('prepText');
+        if (prep) prep.textContent = 'Invite link copied.';
+      } catch {
+        const prep = document.getElementById('prepText');
+        if (prep) prep.textContent = 'Copy failed—select and copy manually.';
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>

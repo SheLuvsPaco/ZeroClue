@@ -1,0 +1,36 @@
+[package]
+name = "zerochat-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+base64 = "0.22"
+hkdf = "0.12"
+sha2 = "0.10"
+rand_core = "0.6"
+rand = "0.8"
+getrandom = "0.2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+keyring = "2"
+time = { version = "0.3", features = ["formatting"] }
+parking_lot = "0.12"
+dirs = "5"
+tauri = { version = "1.6", features = [ "macos-private-api", "api-all", "custom-protocol" ] }
+hpke = "0.11"
+once_cell = "1.19"
+url = "2.5"
+urlencoding = "2.1"
+tokio = { version = "1", features = ["rt", "time", "macros"] }
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

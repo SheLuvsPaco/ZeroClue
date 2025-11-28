@@ -1,0 +1,34 @@
+{
+  "name": "zerochat-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:app": "tauri dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "build:app": "tauri build",
+    "build:mac": "tauri build --bundles dmg",
+    "postbuild:mac": "node scripts/copy-dmg-to-server.js",
+    "check:dmg": "node scripts/check-dmg.js"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.4.7",
+    "@tanstack/react-virtual": "^3.0.1",
+    "dayjs": "^1.11.10"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.11",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.4.0",
+    "tslib": "^2.6.2",
+    "vite": "^5.0.0"
+  }
+}

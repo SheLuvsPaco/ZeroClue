@@ -1,0 +1,5 @@
+rootProject.name = "zerochat-android"
+
+include(":app")
+
+

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Zerochat Desktop",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true
+    },
+    "macOSPrivateApi": true,
+    "bundle": {
+      "active": true,
+      "identifier": "com.redloop.zerochat",
+      "category": "public.app-category.social-networking",
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": null,
+        "frameworks": []
+      },
+      "windows": {
+        "webviewInstallMode": {
+          "type": "downloadBootstrapper"
+        },
+        "nsis": {
+          "installMode": "perMachine"
+        }
+      },
+      "targets": ["dmg"],
+      "icon": ["icons/icon.icns", "icons/icon.ico"],
+      "resources": []
+    },
+    "windows": [
+      {
+        "title": "ZeroChat Desktop",
+        "width": 900,
+        "height": 900
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    }
+  }
+}

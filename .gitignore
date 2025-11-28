@@ -1,0 +1,64 @@
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+*.pdb
+
+# Node
+node_modules/
+dist/
+.next/
+out/
+build/
+*.log
+npm-debug.log*
+
+# Environment variables (CRITICAL - DO NOT COMMIT)
+.env
+.env.local
+.env.production
+.env.development
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Android
+zerochat-android/.gradle/
+zerochat-android/build/
+zerochat-android/app/build/
+zerochat-android/local.properties
+zerochat-android/*.apk
+zerochat-android/*.aab
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials (CRITICAL)
+*.pem
+*.key
+*.p12
+*.keystore
+credentials.json
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
