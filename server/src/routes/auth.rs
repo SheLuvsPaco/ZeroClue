@@ -2,6 +2,10 @@ use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 
 use crate::AppState;
 
@@ -9,6 +13,7 @@ use crate::AppState;
 pub struct SignupReq {
     pub username: String,
     pub password: String,
+    pub invite_token: Option<String>, // Optional invite token for auto-friending
 }
 
 #[derive(Deserialize)]
@@ -54,12 +59,18 @@ pub async fn signup(
         ));
     }
 
-    // Hash password with SHA256
-    let mut hasher = Sha256::new();
-    hasher.update(req.password.as_bytes());
-    let password_hash = hasher.finalize().to_vec();
-    
-    tracing::debug!("Signup: Password hash length: {}", password_hash.len());
+    // Hash password with Argon2id
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash_str = argon2
+        .hash_password(req.password.as_bytes(), &salt)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("password hash error: {e}")))?
+        .to_string();
+
+    // Store as UTF-8 bytes (Argon2 hash is a PHC-formatted string)
+    let password_hash = password_hash_str.as_bytes().to_vec();
+
+    tracing::debug!("Signup: Argon2 password hash length: {}", password_hash.len());
 
     // Check if user already exists with this username
     let existing: Option<Uuid> = sqlx::query_scalar::<_, Uuid>(
@@ -77,13 +88,53 @@ pub async fn signup(
         ));
     }
 
+    // Start transaction for invite token handling
+    let mut tx = state.db.begin().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+    // If invite_token provided, validate it and get inviter info
+    let inviter_username: Option<String> = if let Some(ref invite_token) = req.invite_token {
+        tracing::info!("Signup with invite token");
+
+        // Hash the invite token
+        let mut token_hasher = Sha256::new();
+        token_hasher.update(invite_token.as_bytes());
+        let token_hash = token_hasher.finalize().to_vec();
+
+        // Find the invite token and get inviter_username
+        let token_row: Option<(Uuid, Option<String>)> = sqlx::query_as(
+            r#"SELECT id, inviter_username FROM provision_tokens
+               WHERE token_hash = $1
+               AND purpose = 'invite'
+               AND used_at IS NULL
+               AND expires_at > now()"#
+        )
+        .bind(&token_hash)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+        if let Some((_token_id, inviter)) = token_row {
+            tracing::info!("Valid invite token - inviter: {:?}", inviter);
+            inviter
+        } else {
+            tracing::warn!("Invalid or expired invite token");
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Invalid or expired invite token".to_string(),
+            ));
+        }
+    } else {
+        None
+    };
+
     // Create new user
     let user_id: Uuid = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id",
     )
     .bind(&uname)
     .bind(&password_hash)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         // If it's a unique constraint violation, the username already exists
@@ -93,7 +144,36 @@ pub async fn signup(
         (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}"))
     })?;
 
-    // Generate provision token
+    // If this is an invite signup, update the invite token with the new user_id
+    if let Some(ref invite_token) = req.invite_token {
+        let mut token_hasher = Sha256::new();
+        token_hasher.update(invite_token.as_bytes());
+        let token_hash = token_hasher.finalize().to_vec();
+
+        sqlx::query!(
+            "UPDATE provision_tokens SET user_id = $1 WHERE token_hash = $2 AND purpose = 'invite'",
+            user_id,
+            token_hash
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+        tracing::info!("Invite token updated with user_id: {}", user_id);
+
+        // Return the invite token as the provision token (it's already valid)
+        tx.commit().await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+        return Ok((
+            StatusCode::CREATED,
+            Json(AuthResp {
+                provision_token: invite_token.clone(),
+            }),
+        ));
+    }
+
+    // Generate new provision token for regular signup (no invite)
     let token: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(40)
@@ -108,9 +188,12 @@ pub async fn signup(
     .bind(user_id)
     .bind(&token)
     .bind(expires_at)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+    tx.commit().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
 
     Ok((
         StatusCode::CREATED,
@@ -129,17 +212,7 @@ pub async fn login(
     use time::{Duration, OffsetDateTime};
 
     let uname = req.username.to_lowercase();
-    
-    tracing::info!("🔐 [LOGIN] ========== LOGIN REQUEST RECEIVED ==========");
-    tracing::info!("🔐 [LOGIN] Username: {}", uname);
-    tracing::info!("🔐 [LOGIN] Password length: {} bytes", req.password.len());
-
-    // Hash password for comparison with SHA256
-    let mut hasher = Sha256::new();
-    hasher.update(req.password.as_bytes());
-    let password_hash = hasher.finalize().to_vec();
-    
-    tracing::info!("🔐 [LOGIN] Password hash computed: {} bytes", password_hash.len());
+    tracing::info!("Login request for user: {}", uname);
 
     // Find user and verify password
     #[derive(sqlx::FromRow)]
@@ -148,7 +221,6 @@ pub async fn login(
         password_hash: Option<Vec<u8>>,
     }
 
-    tracing::info!("🔐 [LOGIN] Querying database for user: {}", uname);
     let user: Option<UserRow> = sqlx::query_as(
         "SELECT id, password_hash FROM users WHERE username = $1",
     )
@@ -156,42 +228,53 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await
     .map_err(|e| {
-        tracing::error!("🔐 [LOGIN] ❌ Database error: {}", e);
+        tracing::error!("Database error during login: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}"))
     })?;
 
     let user = user.ok_or_else(|| {
-        tracing::warn!("🔐 [LOGIN] ❌ User not found: {}", uname);
+        tracing::warn!("Login failed - user not found: {}", uname);
         (
             StatusCode::UNAUTHORIZED,
             "Invalid username or password".to_string(),
         )
     })?;
-    
-    tracing::info!("🔐 [LOGIN] ✅ User found: {} (id: {})", uname, user.id);
 
-    // Check password
-    tracing::info!("🔐 [LOGIN] Verifying password...");
+    // Verify password with Argon2
     match &user.password_hash {
-        Some(ref hash) => {
-            tracing::info!("🔐 [LOGIN] Stored hash length: {} bytes", hash.len());
-            // Compare byte arrays
-            if hash.as_slice() == password_hash.as_slice() {
-                tracing::info!("🔐 [LOGIN] ✅ Password matches!");
-            } else {
-                // Password doesn't match - log for debugging
-                tracing::warn!("🔐 [LOGIN] ❌ Password mismatch for user: {}", uname);
-                tracing::debug!("🔐 [LOGIN] Hash comparison failed - stored: {:?}, provided: {:?}", 
-                    &hash[..8.min(hash.len())], &password_hash[..8.min(password_hash.len())]);
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "Invalid username or password".to_string(),
-                ));
+        Some(ref hash_bytes) => {
+            // Convert stored hash bytes to string
+            let hash_str = std::str::from_utf8(hash_bytes)
+                .map_err(|_| {
+                    tracing::error!("Invalid UTF-8 in stored password hash");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Invalid password hash format".to_string())
+                })?;
+
+            // Parse the PHC-formatted hash string
+            let parsed_hash = PasswordHash::new(hash_str)
+                .map_err(|e| {
+                    tracing::error!("Failed to parse password hash: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Invalid password hash format".to_string())
+                })?;
+
+            // Verify password
+            let argon2 = Argon2::default();
+            match argon2.verify_password(req.password.as_bytes(), &parsed_hash) {
+                Ok(_) => {
+                    tracing::info!("Login successful for user: {}", uname);
+                }
+                Err(_) => {
+                    tracing::warn!("Login failed - password mismatch for user: {}", uname);
+                    return Err((
+                        StatusCode::UNAUTHORIZED,
+                        "Invalid username or password".to_string(),
+                    ));
+                }
             }
         }
         None => {
             // User exists but has no password - this shouldn't happen with new system
-            tracing::error!("🔐 [LOGIN] ❌ User {} has no password hash set", uname);
+            tracing::error!("User {} has no password hash set", uname);
             return Err((
                 StatusCode::UNAUTHORIZED,
                 "Account has no password set. Please sign up again.".to_string(),
@@ -200,7 +283,6 @@ pub async fn login(
     }
 
     // Generate provision token
-    tracing::info!("🔐 [LOGIN] Generating provision token...");
     let token: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(40)
@@ -208,7 +290,6 @@ pub async fn login(
         .collect();
 
     let expires_at = OffsetDateTime::now_utc() + Duration::minutes(10);
-    tracing::info!("🔐 [LOGIN] Token expires at: {}", expires_at);
 
     sqlx::query(
         "INSERT INTO provision_tokens (user_id, purpose, token_hash, expires_at) VALUES ($1, 'install', digest($2, 'sha256'), $3)",
@@ -219,12 +300,9 @@ pub async fn login(
     .execute(&state.db)
     .await
     .map_err(|e| {
-        tracing::error!("🔐 [LOGIN] ❌ Failed to insert provision token: {}", e);
+        tracing::error!("Failed to insert provision token: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}"))
     })?;
-
-    tracing::info!("🔐 [LOGIN] ✅ Provision token created successfully");
-    tracing::info!("🔐 [LOGIN] ========== LOGIN REQUEST COMPLETED ==========");
     
     Ok(Json(AuthResp {
         provision_token: token,

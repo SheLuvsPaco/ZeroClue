@@ -147,15 +147,15 @@ export function useAuth() {
   useEffect(() => {
     console.log('[useAuth] 🔄 ========== STATE ACTUALLY CHANGED ==========');
     console.log('[useAuth] 🔄 New state values:', {
-      isAuthenticated,
-      isLoading,
-      hasUser: !!user,
-      username: user?.username,
-      device_id: user?.device_id,
+      isAuthenticated: authState.isAuthenticated,
+      isLoading: authState.isLoading,
+      hasUser: !!authState.user,
+      username: authState.user?.username,
+      device_id: authState.user?.device_id,
     });
     console.log('[useAuth] 🔄 This means React detected the state change and re-rendered');
     console.log('[useAuth] 🔄 ============================================');
-  }, [isAuthenticated, user, isLoading]);
+  }, [authState.isAuthenticated, authState.user, authState.isLoading]);
 
   // Initial check
   useEffect(() => {
@@ -247,29 +247,37 @@ export function useAuth() {
 
   // Log out
   const logout = useCallback(async () => {
+    console.log('[useAuth] Logout called');
+
     // Clear credentials from localStorage (web mode)
     try {
       localStorage.removeItem('zerochat_web_creds');
+      console.log('[useAuth] Cleared localStorage credentials');
     } catch (e) {
       console.warn('Failed to clear localStorage:', e);
     }
-    
+
     // Clear credentials via bridge (Tauri/Android)
     try {
       const { platform } = await import('../services/bridge');
       if (!platform.isWeb) {
         const { invoke } = await import('../services/bridge');
         await invoke('clear_creds', {});
+        console.log('[useAuth] Cleared Tauri credentials');
       }
     } catch (e) {
       // Bridge method might not exist, that's okay
     }
-    
+
     setAuthState({
       isAuthenticated: false,
       isLoading: false,
       user: null,
     });
+
+    // Reload page to ensure UI updates
+    console.log('[useAuth] Reloading page to show logged-out state...');
+    window.location.reload();
   }, []);
 
   // Return state and methods

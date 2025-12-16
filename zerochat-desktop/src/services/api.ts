@@ -262,15 +262,15 @@ export const authApi = {
         device_auth: provisionData.device_auth ? '***' : 'missing',
       });
       
-      if (!provisionData.device_id || (!provisionData.device_auth && !provisionData.device_token)) {
+      if (!provisionData.device_id || !provisionData.device_auth) {
         console.error('[AUTH] Invalid provision response:', provisionData);
         throw new Error('Invalid provision response: missing device credentials');
       }
-      
+
       // Store credentials in localStorage for web mode
       const creds = {
         device_id: provisionData.device_id,
-        device_auth: provisionData.device_auth || provisionData.device_token,
+        device_auth: provisionData.device_auth,
         base_url: baseUrl,
       };
       console.log('[AUTH] Storing credentials (device_id:', creds.device_id, ')');
@@ -356,16 +356,15 @@ export const authApi = {
       }
       
       const provisionData = await provisionResponse.json();
-      console.log('[AUTH] Provision response data:', { 
-        ...provisionData, 
+      console.log('[AUTH] Provision response data:', {
+        ...provisionData,
         device_auth: provisionData.device_auth ? '***' : 'missing',
-        device_token: provisionData.device_token ? '***' : 'missing',
       });
-      
+
       // Store credentials in localStorage for web mode
       const creds = {
         device_id: provisionData.device_id,
-        device_auth: provisionData.device_auth || provisionData.device_token, // Use device_auth if available, fallback to device_token
+        device_auth: provisionData.device_auth,
         base_url: SERVER_BASE,
       };
       console.log('[AUTH] Storing credentials:', { 

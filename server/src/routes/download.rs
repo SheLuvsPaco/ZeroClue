@@ -54,7 +54,7 @@ async fn send_file(path: &str, filename: &str, mime: &str) -> Response {
 
 async fn download_dmg() -> impl IntoResponse {
     send_file(
-        "server/static/downloads/macos/ZeroChat-latest.dmg",
+        "static/downloads/macos/ZeroChat-latest.dmg",
         "ZeroChat-latest.dmg",
         "application/x-apple-diskimage",
     )
@@ -63,7 +63,7 @@ async fn download_dmg() -> impl IntoResponse {
 
 async fn download_apk() -> impl IntoResponse {
     send_file(
-        "server/static/downloads/android/ZeroChat-latest.apk",
+        "static/downloads/android/ZeroChat-latest.apk",
         "ZeroChat-latest.apk",
         "application/vnd.android.package-archive",
     )
@@ -72,7 +72,7 @@ async fn download_apk() -> impl IntoResponse {
 
 async fn download_windows() -> impl IntoResponse {
     send_file(
-        "server/static/downloads/windows/ZeroChat-latest.exe",
+        "static/downloads/windows/ZeroChat-latest.exe",
         "ZeroChat-latest.exe",
         "application/octet-stream",
     )

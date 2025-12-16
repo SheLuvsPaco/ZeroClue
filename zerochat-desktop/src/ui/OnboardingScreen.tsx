@@ -55,19 +55,21 @@ export default function OnboardingScreen() {
     try {
       console.log('[UI] Starting signup for:', username);
       console.log('[UI] Has invite token:', hasInviteToken);
-      
+
       // Signup with invite token if available
       await signup(username, password, inviteToken || undefined, inviteBaseUrl || undefined);
-      
+
       console.log('[UI] Signup completed successfully');
-      
+
       // Clear invite token after successful use
       if (hasInviteToken) {
         clearToken();
         console.log('[UI] Cleared invite token after successful signup');
       }
-      
-      // checkAuth will be called automatically by useAuth hook
+
+      // Force page reload to ensure UI updates
+      console.log('[UI] Reloading page to show logged-in state...');
+      window.location.reload();
     } catch (e: any) {
       console.error('[UI] Signup error:', e);
       const errorMsg = e?.message || e?.toString() || "Unknown error";
@@ -122,6 +124,10 @@ export default function OnboardingScreen() {
       await login(username, password);
       const duration = Date.now() - startTime;
       console.log(`[UI] ✅ Login completed successfully in ${duration}ms`);
+
+      // Force page reload to ensure UI updates
+      console.log('[UI] Reloading page to show logged-in state...');
+      window.location.reload();
     } catch (e: any) {
       const duration = Date.now() - startTime;
       console.error(`[UI] ❌ Login failed after ${duration}ms:`, e);

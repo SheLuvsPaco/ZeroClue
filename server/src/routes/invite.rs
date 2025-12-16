@@ -1,14 +1,12 @@
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
-    response::{Html, IntoResponse},
+    response::Html,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
-use tokio::fs;
 use uuid::Uuid;
 
 use crate::auth::DeviceAuth;
@@ -78,14 +76,6 @@ async fn create_invite(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "inviter user not found".to_string()))?;
 
-    // Create a new anonymous user for the invitee (will be set during signup)
-    let invitee_user_id: Uuid = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO users (username) VALUES ('invitee_' || gen_random_uuid()::text) RETURNING id",
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     // Generate provision token
     let mut raw = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut raw);
@@ -99,12 +89,13 @@ async fn create_invite(
     let expires_at = OffsetDateTime::now_utc() + Duration::minutes(ttl);
 
     // Store provision token with inviter username for auto-friending
+    // NOTE: We don't create a user upfront - the user will be created during signup
+    // For invite tokens, user_id is NULL until the user signs up
     sqlx::query!(
         r#"
         INSERT INTO provision_tokens (user_id, purpose, token_hash, expires_at, inviter_username)
-        VALUES ($1, 'install', $2, $3, $4)
+        VALUES (NULL, 'invite', $1, $2, $3)
         "#,
-        invitee_user_id,
         token_hash,
         expires_at,
         inviter_username
@@ -157,7 +148,7 @@ async fn serve_invite_page(
     tracing::info!("Serving invite page: token={}..., base={}, inviter={}", token_prefix, base, inviter);
 
     // Read the template
-    let template = tokio::fs::read_to_string("server/static/invite.html")
+    let template = tokio::fs::read_to_string("static/invite.html")
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read invite template"))?;
 
@@ -189,8 +180,8 @@ async fn download_latest() -> Result<(HeaderMap, Vec<u8>), (StatusCode, Json<ser
     use axum::http::header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE};
     use std::path::Path;
     
-    let p = Path::new("server/static/downloads/macos/ZeroChat-latest.dmg");
-    
+    let p = Path::new("static/downloads/macos/ZeroChat-latest.dmg");
+
     // Resolve absolute path for logging
     let abs_path = match std::fs::canonicalize(p) {
         Ok(path) => path,

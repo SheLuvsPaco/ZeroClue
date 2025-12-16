@@ -1,9 +1,8 @@
 /**
- * Message composer - input area with send button and attachments
+ * Message composer - input area with send button
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { pickFile } from '../lib/files';
+import React, { useState, useRef } from 'react';
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>;
@@ -52,16 +51,6 @@ export default function Composer({ onSend }: ComposerProps) {
     }
   };
 
-  const handleAttach = async () => {
-    try {
-      const file = await pickFile({ multiple: false });
-      // TODO: Handle file attachment
-      console.log('File selected:', file);
-    } catch (error) {
-      console.error('Failed to pick file:', error);
-    }
-  };
-
   const charCount = text.length;
   const showCharCount = charCount > WARN_CHARS;
   const isOverLimit = charCount >= MAX_CHARS;
@@ -69,17 +58,6 @@ export default function Composer({ onSend }: ComposerProps) {
   return (
     <div className="p-4">
       <div className="flex items-end gap-2">
-        {/* Attach button */}
-        <button
-          onClick={handleAttach}
-          className="p-2 hover:bg-[var(--bg-hover)] rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text)]"
-          title="Attach file"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-
         {/* Text input */}
         <div className="flex-1 relative">
           <textarea
@@ -98,7 +76,7 @@ export default function Composer({ onSend }: ComposerProps) {
             `}
             style={{ minHeight: '44px' }}
           />
-          
+
           {/* Character counter */}
           {showCharCount && (
             <div className={`
@@ -111,31 +89,19 @@ export default function Composer({ onSend }: ComposerProps) {
         </div>
 
         {/* Send button */}
-        {text.trim() ? (
-          <button
-            onClick={handleSend}
-            disabled={isSending || isOverLimit}
-            className={`
-              p-2 rounded-lg font-semibold transition-colors
-              ${isSending || isOverLimit
-                ? 'bg-[var(--text-muted)] text-[var(--text)] opacity-50 cursor-not-allowed'
-                : 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'
-              }
-            `}
-          >
-            {isSending ? '...' : 'Send'}
-          </button>
-        ) : (
-          <button
-            onClick={handleAttach}
-            className="p-2 hover:bg-[var(--bg-hover)] rounded-lg transition-colors text-[var(--text-muted)] hover:text-[var(--text)]"
-            title="Attach file"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-          </button>
-        )}
+        <button
+          onClick={handleSend}
+          disabled={isSending || isOverLimit || !text.trim()}
+          className={`
+            p-2 rounded-lg font-semibold transition-colors
+            ${isSending || isOverLimit || !text.trim()
+              ? 'bg-[var(--text-muted)] text-[var(--text)] opacity-50 cursor-not-allowed'
+              : 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'
+            }
+          `}
+        >
+          {isSending ? '...' : 'Send'}
+        </button>
       </div>
     </div>
   );

@@ -8,6 +8,20 @@ export default defineConfig({
     strictPort: true
   },
   build: {
-    target: 'esnext'
+    target: 'es2015',
+    minify: 'terser',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        format: 'iife',
+        inlineDynamicImports: true
+      }
+    },
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
+    }
   }
 });

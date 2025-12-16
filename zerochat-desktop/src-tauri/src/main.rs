@@ -451,7 +451,7 @@ async fn login(username: String, password: String, base_url: Option<String>) -> 
 }
 
 #[tauri::command]
-async fn signup(username: String, password: String, base_url: Option<String>) -> Result<String, String> {
+async fn signup(username: String, password: String, base_url: Option<String>, invite_token: Option<String>) -> Result<String, String> {
     // Set base URL if provided, otherwise use default
     if let Some(base) = base_url {
         let url = Url::parse(&base).map_err(|e| format!("invalid base URL: {e}"))?;
@@ -461,20 +461,28 @@ async fn signup(username: String, password: String, base_url: Option<String>) ->
         let url = Url::parse("http://127.0.0.1:8080").map_err(|e| format!("failed to set default base: {e}"))?;
         *BASE.lock().unwrap() = url;
     }
-    
+
     let base = BASE.lock().unwrap().to_string();
     eprintln!("Signup: Using base URL: {}", base);
 
     let http = Client::new();
     let signup_url = api_url("api/signup")?.to_string();
     eprintln!("Signup: Calling {}", signup_url);
-    
+
+    // Build signup request with optional invite_token
+    let mut signup_body = serde_json::json!({
+        "username": username,
+        "password": password
+    });
+
+    if let Some(token) = invite_token {
+        signup_body["invite_token"] = serde_json::Value::String(token);
+        eprintln!("Signup: Including invite token in request");
+    }
+
     let signup_resp = http
         .post(&signup_url)
-        .json(&serde_json::json!({
-            "username": username,
-            "password": password
-        }))
+        .json(&signup_body)
         .send()
         .await
         .map_err(|e| format!("Network error: {e}"))?
@@ -492,10 +500,10 @@ async fn signup(username: String, password: String, base_url: Option<String>) ->
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     eprintln!("Signup: Got provision token, redeeming...");
-    
+
     // Now redeem the provision token
     let device_id = provision_with_token(signup_resp.provision_token, None).await?;
-    
+
     eprintln!("Signup: Successfully provisioned device: {}", device_id);
     Ok(format!("Signed up and provisioned device: {}", device_id))
 }

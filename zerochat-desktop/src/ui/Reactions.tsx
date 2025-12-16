@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { useMessagesStore } from '../state/messagesStore';
+import { useAuth } from '../hooks/useAuth';
 
 interface ReactionsProps {
   messageId: string;
@@ -15,7 +16,8 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function Reactions({ messageId, chatId, onClose }: ReactionsProps) {
   const { addReaction, removeReaction } = useMessagesStore();
-  const myUsername = 'current_user'; // TODO: Get from auth context
+  const { user } = useAuth();
+  const myUsername = user?.username || 'current_user';
 
   const handleReaction = (emoji: string) => {
     // Check if user already reacted with this emoji

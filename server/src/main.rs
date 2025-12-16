@@ -69,8 +69,7 @@ struct RedeemReq {
 struct RedeemResp {
     user_id: Uuid,
     device_id: Uuid,
-    device_token: String, // Keep for backward compatibility
-    device_auth: String,  // New: use this in x-device-auth header
+    device_auth: String,
 }
 
 #[derive(Deserialize)]
@@ -304,9 +303,9 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Static file service - serves files from server/static at root paths
+    // Static file service - serves files from static/ at root paths
     // This must come AFTER API routes to avoid conflicts
-    let static_service = ServeDir::new("server/static");
+    let static_service = ServeDir::new("static");
 
     let app = Router::new()
         // API routes first (more specific)
@@ -439,30 +438,24 @@ async fn redeem_provision(
     State(state): State<AppState>,
     Json(body): Json<RedeemReq>,
 ) -> Result<Json<RedeemResp>, (StatusCode, String)> {
-    tracing::info!("🎫 [PROVISION] ========== PROVISION REDEEM REQUEST RECEIVED ==========");
-    tracing::info!("🎫 [PROVISION] Platform: {:?}", body.platform);
-    tracing::info!("🎫 [PROVISION] Token length: {} chars", body.token.len());
-    tracing::info!("🎫 [PROVISION] Push token: {:?}", body.push_token);
+    tracing::info!("Provision redeem request - platform: {:?}", body.platform);
     
     let mut hasher = Sha256::new();
     hasher.update(body.token.as_bytes());
     let token_hash = hasher.finalize().to_vec();
-    tracing::info!("🎫 [PROVISION] Token hash computed: {} bytes", token_hash.len());
 
-    tracing::info!("🎫 [PROVISION] Starting database transaction...");
     let mut tx = state.db.begin().await.map_err(|e| {
-        tracing::error!("🎫 [PROVISION] ❌ Failed to begin transaction: {}", e);
+        tracing::error!("Failed to begin transaction: {}", e);
         internal(e)
     })?;
 
     #[derive(sqlx::FromRow)]
     struct TokenRow {
         id: Uuid,
-        user_id: Uuid,
+        user_id: Option<Uuid>, // Now nullable for invite tokens
         inviter_username: Option<String>,
     }
 
-    tracing::info!("🎫 [PROVISION] Querying provision_tokens table...");
     let row = sqlx::query_as::<_, TokenRow>(
         r#"SELECT id, user_id, inviter_username FROM provision_tokens
            WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now()
@@ -472,29 +465,33 @@ async fn redeem_provision(
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!("🎫 [PROVISION] ❌ Database query failed: {}", e);
+        tracing::error!("Provision query failed: {}", e);
         internal(e)
     })?;
 
     let (token_id, user_id, inviter_username) = match row {
         Some(r) => {
-            tracing::info!("🎫 [PROVISION] ✅ Token found: id={}, user_id={}, inviter={:?}", 
-                r.id, r.user_id, r.inviter_username);
-            (r.id, r.user_id, r.inviter_username)
+            // Ensure user_id is set (it should be set during signup for invite tokens)
+            let uid = r.user_id.ok_or_else(|| {
+                tracing::error!("Token found but user_id is NULL - signup incomplete");
+                (StatusCode::BAD_REQUEST, "Invalid token state - please sign up first".into())
+            })?;
+
+            tracing::info!("Token valid - user_id: {}", uid);
+            (r.id, uid, r.inviter_username)
         },
         None => {
-            tracing::warn!("🎫 [PROVISION] ❌ Token not found or expired/invalid");
+            tracing::warn!("Provision token not found or expired");
             return Err((StatusCode::UNAUTHORIZED, "invalid or expired token".into()));
         },
     };
 
-    tracing::info!("🎫 [PROVISION] Marking token as used...");
     sqlx::query("UPDATE provision_tokens SET used_at = now() WHERE id=$1")
         .bind(token_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            tracing::error!("🎫 [PROVISION] ❌ Failed to mark token as used: {}", e);
+            tracing::error!("Failed to mark token as used: {}", e);
             internal(e)
         })?;
 
@@ -526,7 +523,6 @@ async fn redeem_provision(
         }
     }
 
-    tracing::info!("🎫 [PROVISION] Creating device for user_id: {}", user_id);
     let device_id = sqlx::query_scalar::<_, Uuid>(
         r#"INSERT INTO devices (user_id, platform, push_token)
            VALUES ($1,$2,$3)
@@ -538,13 +534,12 @@ async fn redeem_provision(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!("🎫 [PROVISION] ❌ Failed to create device: {}", e);
+        tracing::error!("Failed to create device: {}", e);
         internal(e)
     })?;
-    
-    tracing::info!("🎫 [PROVISION] ✅ Device created: {}", device_id);
 
-    tracing::info!("🎫 [PROVISION] Generating device auth token...");
+    tracing::info!("Device created for user_id: {}", user_id);
+
     let mut raw_tok = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut raw_tok);
     let token_str = URL_SAFE_NO_PAD.encode(raw_tok);
@@ -552,7 +547,6 @@ async fn redeem_provision(
     th.update(token_str.as_bytes());
     let token_hash = th.finalize().to_vec();
 
-    tracing::info!("🎫 [PROVISION] Updating device with auth token hash...");
     sqlx::query!(
         "UPDATE devices SET auth_token_hash=$1, token_created_at=now() WHERE id=$2",
         token_hash,
@@ -561,31 +555,23 @@ async fn redeem_provision(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        tracing::error!("🎫 [PROVISION] ❌ Failed to update device token: {}", e);
+        tracing::error!("Failed to update device token: {}", e);
         internal(e)
     })?;
 
-    tracing::info!("🎫 [PROVISION] Committing transaction...");
     tx.commit().await.map_err(|e| {
-        tracing::error!("🎫 [PROVISION] ❌ Failed to commit transaction: {}", e);
+        tracing::error!("Failed to commit transaction: {}", e);
         internal(e)
     })?;
-    
-    tracing::info!("🎫 [PROVISION] ✅ Provision redeem completed successfully");
-    tracing::info!("🎫 [PROVISION] ========== PROVISION REDEEM REQUEST COMPLETED ==========");
 
-    tracing::info!("🎫 [PROVISION] Preparing response...");
+    tracing::info!("Provision redeem completed for device_id: {}", device_id);
+
     let response = RedeemResp {
         user_id,
         device_id,
-        device_token: token_str.clone(), // Backward compatibility
-        device_auth: token_str.clone(),  // New field
+        device_auth: token_str,
     };
-    
-    tracing::info!("🎫 [PROVISION] Response: user_id={}, device_id={}, token_length={}", 
-        response.user_id, response.device_id, response.device_auth.len());
-    tracing::info!("🎫 [PROVISION] ========== PROVISION REDEEM REQUEST COMPLETED ==========");
-    
+
     Ok(Json(response))
 }
 

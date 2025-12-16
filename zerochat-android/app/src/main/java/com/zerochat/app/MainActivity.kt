@@ -30,6 +30,9 @@ class MainActivity : ComponentActivity() {
         web = WebView(this)
         setContentView(web)
 
+        // Enable WebView debugging
+        WebView.setWebContentsDebuggingEnabled(true)
+
         val ws: WebSettings = web.settings
         ws.javaScriptEnabled = true
         ws.domStorageEnabled = true
@@ -38,7 +41,23 @@ class MainActivity : ComponentActivity() {
         ws.userAgentString = ws.userAgentString + " ZeroChat/Android"
 
         web.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                android.util.Log.d("ZeroChat", "Page started loading: $url")
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                android.util.Log.d("ZeroChat", "Page finished loading: $url")
+            }
+
+            override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                super.onReceivedError(view, request, error)
+                android.util.Log.e("ZeroChat", "WebView error: ${error?.description} for ${request?.url}")
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                android.util.Log.d("ZeroChat", "URL loading: $url")
                 // Let http/https load inside the WebView
                 if (url.startsWith("http://") || url.startsWith("https://")) return false
                 // For zerochat:// bring it back to JS / app
@@ -56,7 +75,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        web.webChromeClient = WebChromeClient()
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                android.util.Log.d("ZeroChat-Console", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
+                return true
+            }
+        }
         web.addJavascriptInterface(ZeroChatBridge(), "ZeroChatBridge")
 
         // load bundled UI (copied into assets/www by our sync script)
@@ -132,7 +156,12 @@ class MainActivity : ComponentActivity() {
                         val username = args.optString("username", "")
                         val password = args.optString("password", "")
                         val baseUrl = args.optString("base_url", SharedPrefsHelper.getBaseUrl(this@MainActivity))
-                        signup(username, password, baseUrl)
+                        val inviteToken = if (args.has("invite_token") && !args.isNull("invite_token")) {
+                            args.optString("invite_token", null)
+                        } else {
+                            null
+                        }
+                        signup(username, password, baseUrl, inviteToken)
                     }
                     "login" -> {
                         val username = args.optString("username", "")
@@ -205,16 +234,21 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        private fun signup(username: String, password: String, baseUrl: String): String {
+        private fun signup(username: String, password: String, baseUrl: String, inviteToken: String?): String {
             return try {
                 val httpClient = OkHttpClient()
                 val signupUrl = "$baseUrl/api/signup"
-                
+
                 val requestBody = org.json.JSONObject().apply {
                     put("username", username)
                     put("password", password)
+                    // Add invite_token if provided
+                    if (inviteToken != null) {
+                        put("invite_token", inviteToken)
+                        android.util.Log.d("ZeroChat", "Signup: Including invite token")
+                    }
                 }
-                
+
                 val request = okhttp3.Request.Builder()
                     .url(signupUrl)
                     .post(okhttp3.RequestBody.create(
@@ -222,23 +256,23 @@ class MainActivity : ComponentActivity() {
                         requestBody.toString()
                     ))
                     .build()
-                
+
                 val response = httpClient.newCall(request).execute()
                 val responseBody = response.body?.string() ?: ""
-                
+
                 if (!response.isSuccessful) {
                     return "{\"error\":\"HTTP ${response.code}: $responseBody\"}"
                 }
-                
+
                 val signupResp = org.json.JSONObject(responseBody)
                 val provisionToken = signupResp.getString("provision_token")
-                
+
                 // Redeem provision token
                 val deviceId = provisionWithTokenInternal(provisionToken, baseUrl)
-                
+
                 // Upload identity and keypackage
                 uploadIdentityAndKeypackageInternal()
-                
+
                 "{\"device_id\":\"$deviceId\"}"
             } catch (e: Exception) {
                 "{\"error\":\"${e.message}\"}"
@@ -572,12 +606,12 @@ class MainActivity : ComponentActivity() {
                     throw Exception("HTTP ${response.code}: $responseBody")
                 }
                 
-                // Parse and decrypt messages (simplified - would need decryption)
+                // Parse messages (decryption not yet implemented for Android)
                 val messages = org.json.JSONArray(responseBody)
                 val decrypted = org.json.JSONArray()
                 for (i in 0 until messages.length()) {
-                    // TODO: Decrypt message
-                    decrypted.put("Decrypted message $i")
+                    // Decryption requires Rust crypto bindings for Android
+                    decrypted.put("Encrypted message $i")
                 }
                 
                 decrypted.toString()

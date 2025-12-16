@@ -19,6 +19,7 @@ time = { version = "0.3", features = ["macros","serde","formatting"] }
 sha2 = "0.10"
 rand = "0.8"
 base64 = "0.22"
+argon2 = "0.5"
 redis = { version = "0.25", features = ["tokio-comp","connection-manager"] }
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }

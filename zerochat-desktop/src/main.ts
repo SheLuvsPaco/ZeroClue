@@ -135,37 +135,51 @@ function hideError() {
 
 onboardSignup.addEventListener("click", async () => {
   hideError();
-  
+
   try {
     const username = onboardUsername.value.trim();
     const password = onboardPassword.value.trim();
-    
+
     if (!username || !password) {
       showError("Please enter username and password");
       return;
     }
-    
+
     if (password.length < 8) {
       showError("Password must be at least 8 characters");
       return;
     }
-    
+
     // Disable buttons during signup
     (onboardSignup as HTMLButtonElement).disabled = true;
     (onboardLogin as HTMLButtonElement).disabled = true;
-    
+
     // Set base URL (hardcoded)
     await invoke<string>("set_base", { base: SERVER_BASE });
-    
-    // Signup - create new account
-    await invoke<string>("signup", { username, password, base_url: SERVER_BASE });
-    
+
+    // Check for pending invite token (using consistent key name)
+    const inviteToken = localStorage.getItem("zerochat_pending_invite_token");
+
+    // Signup - create new account (with optional invite token)
+    await invoke<string>("signup", {
+      username,
+      password,
+      base_url: SERVER_BASE,
+      invite_token: inviteToken || null
+    });
+
+    // Clear the pending invite token after successful signup
+    if (inviteToken) {
+      localStorage.removeItem("zerochat_pending_invite_token");
+      localStorage.removeItem("zerochat_pending_inviter");
+    }
+
     // Complete auth and enter app
     await completeAuth();
   } catch (e: any) {
     const errorMsg = e?.message || e?.toString() || String(e) || "Unknown error";
     console.error("Signup error:", errorMsg);
-    
+
     if (errorMsg.includes("Network error") || errorMsg.includes("error sending request")) {
       showError("Cannot connect to server. Make sure the server is running on http://127.0.0.1:8080");
     } else if (errorMsg.includes("409") || errorMsg.includes("Conflict") || errorMsg.includes("already exists")) {
@@ -475,17 +489,22 @@ async function handleProvision(token: string, base?: string, inviter?: string) {
     if (base) {
       await invoke<string>("set_base", { base });
     }
-    
-    // Redeem token (this will auto-create friendship if inviter is present)
-    await invoke<string>("provision_with_token", { token, base_url: base || null });
-    await invoke<string>("upload_identity_and_keypackage");
-    
-    // Note: Auto-friending happens on the server during token redemption
-    // No need to manually send friend request here
-    
+
+    // Store invite token in localStorage for use during signup (using consistent key name)
+    localStorage.setItem("zerochat_pending_invite_token", token);
+    if (inviter) {
+      localStorage.setItem("zerochat_pending_inviter", inviter);
+    }
+
+    // Show onboarding screen for user to signup/login
     checkOnboarding();
+
+    // If inviter is present, show a message
+    if (inviter) {
+      alert(`You've been invited to ZeroChat by ${inviter}! Please sign up to accept the invitation.`);
+    }
   } catch (e: any) {
-    alert("Provision failed: " + (e?.message || e));
+    alert("Failed to process invite: " + (e?.message || e));
   }
 }
 
