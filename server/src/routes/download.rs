@@ -6,8 +6,7 @@ use axum::{
     Router,
 };
 use std::path::PathBuf;
-use tokio::fs::File;
-use tokio_util::io::ReaderStream;
+use tokio::fs;
 
 use crate::AppState;
 
@@ -21,9 +20,10 @@ pub fn router() -> Router<AppState> {
 async fn send_file(path: &str, filename: &str, mime: &str) -> Response {
     let path_buf = PathBuf::from(path);
 
-    // Try to open file; 404 if missing
-    let file = match File::open(&path_buf).await {
-        Ok(f) => f,
+    // Read entire file into memory to get proper Content-Length
+    // This fixes Android DownloadManager hanging at 100%
+    let file_bytes = match fs::read(&path_buf).await {
+        Ok(bytes) => bytes,
         Err(e) => {
             tracing::warn!(
                 "Download file not found or unreadable at {}: {}",
@@ -34,7 +34,7 @@ async fn send_file(path: &str, filename: &str, mime: &str) -> Response {
         }
     };
 
-    let stream = ReaderStream::new(file);
+    let content_length = file_bytes.len();
 
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
@@ -44,12 +44,17 @@ async fn send_file(path: &str, filename: &str, mime: &str) -> Response {
             .parse()
             .unwrap(),
     );
+    headers.insert(header::CONTENT_LENGTH, content_length.to_string().parse().unwrap());
+    headers.insert(
+        header::ACCEPT_RANGES,
+        "bytes".parse().unwrap(),
+    );
     headers.insert(
         header::CACHE_CONTROL,
         "no-store, no-cache, must-revalidate".parse().unwrap(),
     );
 
-    (headers, Body::from_stream(stream)).into_response()
+    (headers, Body::from(file_bytes)).into_response()
 }
 
 async fn download_dmg() -> impl IntoResponse {
