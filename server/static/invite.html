@@ -81,25 +81,29 @@
   const isMac = /Macintosh|Mac OS X/i.test(ua);
 
   if (isAndroid) {
-    // On Android: show Android button, hide desktop buttons
+    // On Android: show Android button prominently, hide desktop buttons
     if (btnMac) btnMac.classList.add('hidden');
     if (btnWin) btnWin.classList.add('hidden');
     if (btnAndroid) {
       btnAndroid.classList.remove('hidden');
       btnAndroid.setAttribute('href', androidUrl);
+      // Make the download button more prominent on Android
+      btnAndroid.classList.remove('outline');
+      btnAndroid.textContent = '📱 Download ZeroChat APK';
     }
 
-    // Try opening the Android app
-    setTimeout(() => {
+    // Try opening the Android app via deep link ONCE (no setTimeout)
+    // This preserves user gesture for the deep link attempt
+    try {
       window.location.href = androidScheme;
-    }, 0);
-
-    // After 500ms, if app didn't take over (tab likely still visible), start APK download
-    setTimeout(() => {
-      if (document.visibilityState === 'visible') {
-        window.location.href = androidUrl;
-      }
-    }, 500);
+    } catch (e) {
+      // Deep link failed, user can tap the download button
+      console.log('Deep link attempt:', e);
+    }
+    
+    // NOTE: We do NOT auto-trigger the download with setTimeout anymore.
+    // This was breaking the user gesture requirement on Android browsers,
+    // causing downloads to hang at 100%. Users must tap the download button.
   } else {
     // Desktop: show appropriate buttons
     if (btnMac && isMac) {

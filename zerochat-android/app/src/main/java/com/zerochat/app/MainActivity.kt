@@ -38,6 +38,8 @@ class MainActivity : ComponentActivity() {
         ws.domStorageEnabled = true
         ws.allowFileAccess = true
         ws.allowContentAccess = true
+        ws.allowFileAccessFromFileURLs = true
+        ws.allowUniversalAccessFromFileURLs = true 
         ws.userAgentString = ws.userAgentString + " ZeroChat/Android"
 
         web.webViewClient = object : WebViewClient() {
@@ -81,6 +83,59 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         }
+        
+        // CRITICAL: Set up DownloadListener to handle APK downloads from WebView
+        // Without this, downloads will fail or hang at 100%
+        web.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            android.util.Log.d("ZeroChat", "Download requested: $url, mime: $mimeType, size: $contentLength")
+            
+            try {
+                val request = android.app.DownloadManager.Request(Uri.parse(url)).apply {
+                    // Set MIME type for APK
+                    setMimeType(mimeType ?: "application/vnd.android.package-archive")
+                    
+                    // Include cookies (important for authenticated downloads)
+                    val cookies = android.webkit.CookieManager.getInstance().getCookie(url)
+                    if (!cookies.isNullOrEmpty()) {
+                        addRequestHeader("Cookie", cookies)
+                    }
+                    addRequestHeader("User-Agent", userAgent)
+                    
+                    // Show download progress in notification
+                    setNotificationVisibility(
+                        android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                    )
+                    
+                    // Set download location
+                    val fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
+                    setDestinationInExternalPublicDir(
+                        android.os.Environment.DIRECTORY_DOWNLOADS,
+                        fileName
+                    )
+                    
+                    setTitle(fileName)
+                    setDescription("Downloading ZeroChat...")
+                }
+                
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+                downloadManager.enqueue(request)
+                
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    "Download started. Check your notifications.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                
+            } catch (e: Exception) {
+                android.util.Log.e("ZeroChat", "Download failed: ${e.message}", e)
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    "Download failed: ${e.message}",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+        
         web.addJavascriptInterface(ZeroChatBridge(), "ZeroChatBridge")
 
         // load bundled UI (copied into assets/www by our sync script)
@@ -155,7 +210,7 @@ class MainActivity : ComponentActivity() {
                     "signup" -> {
                         val username = args.optString("username", "")
                         val password = args.optString("password", "")
-                        val baseUrl = args.optString("base_url", SharedPrefsHelper.getBaseUrl(this@MainActivity))
+                        val baseUrl = "https://joya-pentadactyl-lin.ngrok-free.dev"
                         val inviteToken = if (args.has("invite_token") && !args.isNull("invite_token")) {
                             args.optString("invite_token", null)
                         } else {
@@ -166,7 +221,7 @@ class MainActivity : ComponentActivity() {
                     "login" -> {
                         val username = args.optString("username", "")
                         val password = args.optString("password", "")
-                        val baseUrl = args.optString("base_url", SharedPrefsHelper.getBaseUrl(this@MainActivity))
+                        val baseUrl = "https://joya-pentadactyl-lin.ngrok-free.dev"
                         login(username, password, baseUrl)
                     }
                     "provision_with_token" -> {
