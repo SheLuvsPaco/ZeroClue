@@ -22,7 +22,7 @@ export function useAuth() {
   const checkAuth = useCallback(async () => {
     console.log('[checkAuth] ========== CHECK AUTH STARTED ==========');
     const startTime = Date.now();
-    
+
     try {
       console.log('[checkAuth] Step 1: Loading credentials...');
       let creds;
@@ -46,7 +46,7 @@ export function useAuth() {
         console.log('[checkAuth] ========== CHECK AUTH COMPLETED (no creds) ==========');
         return;
       }
-      
+
       if (!creds || !creds.device_id || !creds.device_auth) {
         console.log('[checkAuth] Step 2: No valid credentials found');
         console.log('[checkAuth] Setting state: isAuthenticated=false, isLoading=false, user=null');
@@ -58,7 +58,7 @@ export function useAuth() {
         console.log('[checkAuth] ========== CHECK AUTH COMPLETED (invalid creds) ==========');
         return;
       }
-      
+
       console.log('[checkAuth] Step 2: Valid credentials found, fetching user info...');
       console.log('[checkAuth] Calling userApi.getMe()...');
       try {
@@ -71,12 +71,12 @@ export function useAuth() {
           hasUser: !!user,
           userKeys: user ? Object.keys(user) : [],
         });
-        
+
         console.log('[checkAuth] About to set state: isAuthenticated=true, isLoading=false, user=', {
           username: user?.username,
           device_id: user?.device_id,
         });
-        
+
         // Set state with explicit values
         setAuthState((prevState) => {
           console.log('[checkAuth] setAuthState callback called, prevState:', {
@@ -84,25 +84,25 @@ export function useAuth() {
             isLoading: prevState.isLoading,
             hasUser: !!prevState.user,
           });
-          
+
           const newState = {
             isAuthenticated: true,
             isLoading: false,
             user: user,
           };
-          
+
           console.log('[checkAuth] setAuthState returning new state:', {
             isAuthenticated: newState.isAuthenticated,
             isLoading: newState.isLoading,
             username: newState.user?.username,
           });
-          
+
           return newState;
         });
-        
+
         // Log immediately after setState (though state won't be updated yet due to async nature)
         console.log('[checkAuth] setAuthState called (state update is async)');
-        
+
         const duration = Date.now() - startTime;
         console.log(`[checkAuth] ✅ State update initiated in ${duration}ms`);
         console.log('[checkAuth] Note: State will be updated on next render');
@@ -111,7 +111,7 @@ export function useAuth() {
         console.error('[checkAuth] Step 2 failed: get_me error:', getMeError);
         const errorMsg = getMeError?.message || getMeError?.toString() || '';
         console.log('[checkAuth] Error message:', errorMsg);
-        
+
         // If it's an auth error (401, 403), clear credentials
         if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('UNAUTHORIZED') || errorMsg.includes('invalid token') || errorMsg.includes('not provisioned')) {
           console.log('[checkAuth] Invalid credentials detected, clearing...');
@@ -122,7 +122,7 @@ export function useAuth() {
             console.warn('[checkAuth] Failed to clear credentials:', e);
           }
         }
-        
+
         console.log('[checkAuth] Setting state: isAuthenticated=false, isLoading=false, user=null');
         setAuthState({
           isAuthenticated: false,
@@ -171,7 +171,7 @@ export function useAuth() {
       await authApi.signup(username, password, inviteToken, inviteBaseUrl);
       console.log('[useAuth] Signup API call succeeded, checking auth...');
       // Wait a bit for credentials to be stored
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await checkAuth();
       console.log('[useAuth] Auth check completed');
     } catch (error) {
@@ -190,27 +190,27 @@ export function useAuth() {
       hasUser: !!authState.user,
     });
     const startTime = Date.now();
-    
+
     try {
       console.log('[useAuth] Step 1: Calling authApi.login()...');
       await authApi.login(username, password);
       const loginDuration = Date.now() - startTime;
       console.log(`[useAuth] ✅ Step 1 completed: authApi.login() finished in ${loginDuration}ms`);
-      
+
       console.log('[useAuth] Step 2: Waiting 100ms for credentials to be stored...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       console.log('[useAuth] Step 3: Calling checkAuth() to verify credentials...');
       await checkAuth();
       const totalDuration = Date.now() - startTime;
       console.log(`[useAuth] ✅ Step 3 completed: checkAuth() finished in ${totalDuration}ms`);
-      
+
       // Log state AFTER checkAuth completes
       // Note: setState is async, so we need to wait for React to process the update
       // The useEffect above will log when state actually changes
       console.log('[useAuth] Waiting for React to process state update...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Read current state (might still be stale due to closure)
       console.log('[useAuth] State from closure (may be stale):', {
         isAuthenticated: authState.isAuthenticated,
@@ -219,7 +219,7 @@ export function useAuth() {
         username: authState.user?.username,
       });
       console.log('[useAuth] Note: Check the [useAuth] 🔄 State changed log above to see actual state');
-      
+
       console.log(`[useAuth] ✅ Login hook completed successfully in ${totalDuration}ms`);
       console.log('[useAuth] ========== LOGIN HOOK ENDED ==========');
     } catch (error: any) {

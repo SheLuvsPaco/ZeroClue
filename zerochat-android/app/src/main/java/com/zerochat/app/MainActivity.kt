@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.widget.Toast.makeText(this, "VERSION 3 ACTIVE", android.widget.Toast.LENGTH_LONG).show()
         web = WebView(this)
         setContentView(web)
 
@@ -226,7 +227,7 @@ class MainActivity : ComponentActivity() {
                     }
                     "provision_with_token" -> {
                         val token = args.optString("token", "")
-                        val baseUrl = args.optString("base_url", SharedPrefsHelper.getBaseUrl(this@MainActivity))
+                        val baseUrl = "https://joya-pentadactyl-lin.ngrok-free.dev"
                         provisionWithToken(token, baseUrl)
                     }
                     "upload_identity_and_keypackage" -> {

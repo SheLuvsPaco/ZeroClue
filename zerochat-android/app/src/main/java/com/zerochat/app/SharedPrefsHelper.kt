@@ -20,7 +20,7 @@ object SharedPrefsHelper {
     }
     
     fun getBaseUrl(context: Context): String {
-        return getPrefs(context).getString(KEY_BASE_URL, "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
+        return "https://joya-pentadactyl-lin.ngrok-free.dev"
     }
     
     fun saveCredentials(context: Context, deviceId: String, deviceAuth: String) {

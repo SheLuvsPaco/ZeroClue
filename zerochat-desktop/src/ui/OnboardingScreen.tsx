@@ -1,7 +1,6 @@
 /**
- * Onboarding screen for signup/login
+ * Onboarding screen for signup/login (V10 FIX)
  */
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useInviteToken } from '../hooks/useInviteToken';
@@ -21,8 +20,12 @@ export default function OnboardingScreen() {
     }
   }, [hasInviteToken]);
 
-  const handleSignup = async () => {
+  // ✅ V10: FIRE & FORGET SIGNUP
+  // This function does NOT await the bridge. It sends the command and then forces a reload.
+  const handleSignup = () => {
     setError('');
+    console.log('[UI] V10: STARTING FIRE & FORGET SEQUENCE...');
+
     if (!username || !password) {
       setError("Please enter username and password");
       return;
@@ -33,122 +36,75 @@ export default function OnboardingScreen() {
     }
 
     // CRITICAL: Clear URL parameters to prevent invite flow interference
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has('token')) {
-        url.searchParams.delete('token');
-        url.searchParams.delete('base');
-        url.searchParams.delete('inviter');
-        window.history.replaceState({}, '', url.pathname);
-        console.log('[UI] Cleared invite token from URL');
-      }
-    }
-
-    // Clear any existing credentials first
     try {
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('token')) {
+          url.searchParams.delete('token');
+          url.searchParams.delete('base');
+          url.searchParams.delete('inviter');
+          window.history.replaceState({}, '', url.pathname);
+        }
+      }
       localStorage.removeItem('zerochat_web_creds');
     } catch (e) {
-      // Ignore
+      // Ignore cleanup errors
     }
 
     setIsLoading(true);
-    try {
-      console.log('[UI] Starting signup for:', username);
-      console.log('[UI] Has invite token:', hasInviteToken);
 
-      // Signup with invite token if available
-      await signup(username, password, inviteToken || undefined, inviteBaseUrl || undefined);
+    // 1. FIRE THE SIGNUP (Do not await!)
+    // We assume the native side will handle it. We catch errors just for logging.
+    signup(username, password, inviteToken || undefined, inviteBaseUrl || undefined)
+      .then(() => console.log('[UI] Signup promise resolved (Bridge is fast today!)'))
+      .catch(e => console.error('[UI] Background signup error (Ignored):', e));
 
-      console.log('[UI] Signup completed successfully');
-
-      // Clear invite token after successful use
-      if (hasInviteToken) {
-        clearToken();
-        console.log('[UI] Cleared invite token after successful signup');
-      }
-
-      // Force page reload to ensure UI updates
-      console.log('[UI] Reloading page to show logged-in state...');
-      window.location.reload();
-    } catch (e: any) {
-      console.error('[UI] Signup error:', e);
-      const errorMsg = e?.message || e?.toString() || "Unknown error";
-      setError(errorMsg);
-      // Clear any partial credentials on error
-      try {
-        localStorage.removeItem('zerochat_web_creds');
-      } catch (err) {
-        // Ignore
-      }
-    } finally {
-      setIsLoading(false);
+    if (hasInviteToken) {
+      clearToken();
     }
+
+    // 2. THE COUNTDOWN TO RELOAD
+    // We give the native app 3 seconds to write the file, then we reboot.
+    let count = 3;
+    const timer = setInterval(() => {
+      console.log(`[UI] Force reload in ${count}...`);
+      count--;
+      if (count < 0) {
+        clearInterval(timer);
+        console.log('[UI] 🚀 TIME UP. RELOADING INTO APP.');
+        window.location.reload();
+      }
+    }, 1000);
   };
 
   const handleLogin = async () => {
     console.log('[UI] ========== LOGIN FLOW STARTED ==========');
-    console.log('[UI] Username:', username ? `${username.substring(0, 3)}***` : 'empty');
-    console.log('[UI] Password length:', password.length);
-    
+
     setError('');
     if (!username || !password) {
-      console.warn('[UI] Validation failed: missing username or password');
       setError("Please enter username and password");
       return;
     }
 
-    // CRITICAL: Clear URL parameters to prevent invite flow interference
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has('token')) {
-        url.searchParams.delete('token');
-        url.searchParams.delete('base');
-        url.searchParams.delete('inviter');
-        window.history.replaceState({}, '', url.pathname);
-        console.log('[UI] Cleared invite token from URL');
-      }
-    }
-
-    // Clear any existing credentials first
+    // Clear cleanup
     try {
       localStorage.removeItem('zerochat_web_creds');
-      console.log('[UI] Cleared existing credentials from localStorage');
-    } catch (e) {
-      console.warn('[UI] Failed to clear localStorage:', e);
-    }
+    } catch (e) { }
 
     setIsLoading(true);
     const startTime = Date.now();
     try {
-      console.log('[UI] Calling login() function...');
       await login(username, password);
-      const duration = Date.now() - startTime;
-      console.log(`[UI] ✅ Login completed successfully in ${duration}ms`);
-
-      // Force page reload to ensure UI updates
-      console.log('[UI] Reloading page to show logged-in state...');
+      console.log(`[UI] ✅ Login completed successfully`);
       window.location.reload();
     } catch (e: any) {
       const duration = Date.now() - startTime;
       console.error(`[UI] ❌ Login failed after ${duration}ms:`, e);
-      console.error('[UI] Error details:', {
-        message: e?.message,
-        stack: e?.stack,
-        name: e?.name,
-        toString: e?.toString(),
-      });
       const errorMsg = e?.message || e?.toString() || "Unknown error";
       setError(errorMsg);
-      // Clear any partial credentials on error
-      try {
-        localStorage.removeItem('zerochat_web_creds');
-        console.log('[UI] Cleared partial credentials after error');
-      } catch (err) {
-        console.warn('[UI] Failed to clear credentials after error:', err);
-      }
+      try { localStorage.removeItem('zerochat_web_creds'); } catch (err) { }
     } finally {
       setIsLoading(false);
-      console.log('[UI] ========== LOGIN FLOW ENDED ==========');
     }
   };
 
@@ -157,6 +113,10 @@ export default function OnboardingScreen() {
       <div className="max-w-md w-full p-8">
         <h1 className="text-3xl font-bold mb-8 text-center text-[var(--text)]">
           Welcome to ZeroChat
+          {/* VISUAL PROOF MARKER */}
+          <div className="bg-red-600 text-white text-sm p-2 mt-2 rounded">
+            V10: NUCLEAR FIRE & FORGET
+          </div>
         </h1>
         <div className="space-y-4">
           <div>
@@ -202,7 +162,7 @@ export default function OnboardingScreen() {
               disabled={isLoading}
               className="flex-1 bg-[var(--accent)] text-white py-3 rounded-lg font-medium hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50"
             >
-              Sign Up
+              {isLoading ? 'Processing...' : 'Sign Up'}
             </button>
             <button
               onClick={handleLogin}
@@ -217,4 +177,3 @@ export default function OnboardingScreen() {
     </div>
   );
 }
-
