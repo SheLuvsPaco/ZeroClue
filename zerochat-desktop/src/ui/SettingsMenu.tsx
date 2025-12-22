@@ -4,8 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { userApi } from '../services/api';
-import { authApi } from '../services/api';
+import { createInviteLink } from '../api';
 
 interface SettingsMenuProps {
   onClose: () => void;
@@ -31,20 +30,16 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
       userType: typeof user,
       userString: String(user),
     });
-    
-    // Always load device ID from credentials as fallback
-    // The user object from /api/me should have device_id, but load from creds as backup
-    authApi.loadCreds().then(creds => {
-      if (creds?.device_id) {
-        console.log('[SettingsMenu] Loaded device_id from credentials:', creds.device_id);
-        setDeviceId(creds.device_id);
-      } else {
-        console.warn('[SettingsMenu] No device_id in credentials');
+
+    // ✅ FIX: Get device_id directly from the authenticated user object
+    // (We don't need to load creds manually anymore)
+    useEffect(() => {
+      if (user?.device_id) {
+        console.log('[SettingsMenu] Setting device_id from user:', user.device_id);
+        setDeviceId(user.device_id);
       }
-    }).catch(e => {
-      console.warn('[SettingsMenu] Failed to load device_id from credentials:', e);
-    });
-    
+    }, [user]);
+
     // Also try to get device_id from user object if available
     if (user?.device_id) {
       console.log('[SettingsMenu] Found device_id in user object:', user.device_id);
@@ -59,18 +54,18 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
       hasUser: !!user,
       username: user?.username,
     });
-    
+
     if (!isAuthenticated) {
       console.error('[SettingsMenu] Not authenticated, cannot create invite');
       setError('Not authenticated. Please log in again.');
       return;
     }
-    
+
     setIsGenerating(true);
     setError('');
     try {
       console.log('[SettingsMenu] Calling userApi.createInvite()...');
-      const result = await userApi.createInvite(null, 60);
+      const result = await createInviteLink(60);
       console.log('[SettingsMenu] Invite link created:', result.invite_link ? 'success' : 'failed');
       setInviteLink(result.invite_link);
     } catch (e: any) {
@@ -90,7 +85,7 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div 
+      <div
         className="bg-[var(--bg-elev)] rounded-lg shadow-lg w-full max-w-md p-6"
         onClick={(e) => e.stopPropagation()}
       >

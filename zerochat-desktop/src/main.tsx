@@ -4,116 +4,97 @@ import App from './App';
 import './style.css';
 import './ui/theme.css';
 
-// --- STEP 1: KILL THE GHOST (Clear Service Workers) ---
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      console.log('Unregistering ghost service worker:', registration);
-      registration.unregister();
-    }
-  });
-}
+// =========================================================================
+// ✅ V13.2 TITANIUM BRIDGE (Syntax Fixed)
+// =========================================================================
 
-// Helper to write logs to the screen (so we can see what's happening on the phone)
-function visualLog(msg: string) {
-  console.log(msg);
-  // Create a temporary log overlay if it doesn't exist
-  let logDiv = document.getElementById('startup-log');
-  if (!logDiv) {
-    logDiv = document.createElement('div');
-    logDiv.id = 'startup-log';
-    logDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#0f0;font-family:monospace;font-size:10px;padding:10px;z-index:9999;pointer-events:none;max-height:200px;overflow:hidden;';
-    document.body.appendChild(logDiv);
-  }
-  const line = document.createElement('div');
-  line.textContent = `> ${msg}`;
-  logDiv.appendChild(line);
-}
+// 1. THE TICKET REGISTRY
+const pendingRequests = new Map<string, { resolve: (val: any) => void; reject: (err: any) => void }>();
 
-// --- STEP 2: SETUP BRIDGE POLYFILL ---
-function setupBridge() {
-  if (typeof window !== 'undefined' && 'ZeroChatBridge' in window) {
-    visualLog('Bridge detected immediately.');
+// 2. THE LISTENER
+(window as any).onNativeResponse = (requestId: string, resultJson: string) => {
+  const resolver = pendingRequests.get(requestId);
 
-    // Android WebView bridge polyfill
-    (window as any).invoke = async function (cmd: string, args: any = {}) {
-      const bridge = (window as any).ZeroChatBridge;
-      if (!bridge) throw new Error('ZeroChatBridge lost!');
-
-      const argsJson = JSON.stringify(args);
-      const result = bridge.invoke(cmd, argsJson);
-
-      if (typeof result === 'string') {
-        if (result.trim().startsWith('{"error":')) {
-          const errorObj = JSON.parse(result);
-          throw new Error(errorObj.error);
-        }
-        try {
-          return JSON.parse(result);
-        } catch (e) {
-          if (result.startsWith('"') && result.endsWith('"')) return result.slice(1, -1);
-          return result;
-        }
-      }
-      return result;
-    };
-    return true;
-  }
-  return false;
-}
-
-// --- STEP 3: WAIT FOR BRIDGE & RENDER ---
-async function initializeApp() {
-  visualLog('Initializing V9...');
-
-  const rootElement = document.getElementById('root');
-  if (!rootElement) {
-    visualLog('Root missing. Retrying...');
-    setTimeout(initializeApp, 100);
+  if (!resolver) {
+    // ✅ FIXED: Proper function call syntax
+    console.warn(`[Bridge] Received orphan response: ${requestId}`);
     return;
   }
 
-  // RACE: Wait for bridge up to 2 seconds
-  let attempts = 0;
-  const maxAttempts = 20; // 2 seconds (20 * 100ms)
+  pendingRequests.delete(requestId);
 
-  const waitForBridge = () => {
-    // If we found the bridge, stop waiting and render
-    if (setupBridge()) {
-      visualLog('✅ Bridge successfully linked. Rendering App.');
-      renderReact(rootElement);
-      return;
-    }
+  try {
+    const result = JSON.parse(resultJson);
 
-    // If we are likely NOT on Android (e.g. standard browser), just render
-    if (!navigator.userAgent.includes('Android')) {
-      visualLog('Not Android. Rendering immediately.');
-      renderReact(rootElement);
-      return;
-    }
-
-    attempts++;
-    if (attempts < maxAttempts) {
-      visualLog(`Waiting for Bridge... (${attempts}/${maxAttempts})`);
-      setTimeout(waitForBridge, 100); // Check again in 100ms
+    if (result && typeof result === 'object' && result.error) {
+      // ✅ FIXED: Proper syntax with two arguments
+      console.error(`[Bridge] Native Error (${requestId}):`, result.error);
+      resolver.reject(new Error(result.error));
     } else {
-      visualLog('⚠️ Bridge Timed Out. Rendering anyway (Force Load).');
-      // Define a dummy invoke so the app doesn't crash immediately
-      (window as any).invoke = async () => { throw new Error('Bridge unreachable'); };
-      renderReact(rootElement);
+      resolver.resolve(result);
     }
-  };
+  } catch (e) {
+    // ✅ FIXED
+    console.log(`[Bridge] Raw Result (${requestId}):`, resultJson);
+    resolver.resolve(resultJson);
+  }
+};
 
-  // Start the race
-  waitForBridge();
-}
+// 3. THE SENDER
+(window as any).invoke = (cmd: string, args: any = {}) => {
+  return new Promise((resolve, reject) => {
 
-function renderReact(rootElement: HTMLElement) {
-  // Clear the log after a few seconds so it doesn't block UI
-  setTimeout(() => {
-    const logDiv = document.getElementById('startup-log');
-    if (logDiv) logDiv.style.display = 'none';
-  }, 3000);
+    // Check if bridge exists
+    if (typeof window === 'undefined' || !('ZeroChatBridge' in window)) {
+      // ✅ FIXED
+      console.warn(`[Bridge] Mocking call (No Bridge): ${cmd}`);
+      setTimeout(() => resolve({ success: true, mock: true }), 500);
+      return;
+    }
+
+    const bridge = (window as any).ZeroChatBridge;
+    const requestId = 'req_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+
+    pendingRequests.set(requestId, { resolve, reject });
+
+    try {
+      // STRATEGY: Try Async (postMessage) first
+      if (typeof bridge.postMessage === 'function') {
+        bridge.postMessage(cmd, JSON.stringify(args), requestId);
+      }
+      // FALLBACK: Try Sync (invoke) for older APKs
+      else if (typeof bridge.invoke === 'function') {
+        // ✅ FIXED
+        console.warn(`[Bridge] Degraded: sync invoke for ${cmd}`);
+        const result = bridge.invoke(cmd, JSON.stringify(args));
+
+        // Manually trigger response listener since sync returns immediately
+        (window as any).onNativeResponse(requestId, result);
+      }
+      else {
+        throw new Error("Bridge exists but has no methods!");
+      }
+    } catch (e) {
+      pendingRequests.delete(requestId);
+      // ✅ FIXED
+      console.error(`[Bridge] Critical Failure:`, e);
+      reject(e);
+    }
+  });
+};
+
+// =========================================================================
+// APP INITIALIZATION (Safe Start)
+// =========================================================================
+
+function initializeApp() {
+  const rootElement = document.getElementById('root');
+
+  if (!rootElement) {
+    console.error("Root element missing! Retrying in 100ms...");
+    setTimeout(initializeApp, 100);
+    return;
+  }
 
   const root = ReactDOM.createRoot(rootElement);
   root.render(
@@ -123,7 +104,7 @@ function renderReact(rootElement: HTMLElement) {
   );
 }
 
-// Start
+// Wait for DOM to be ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initializeApp);
 } else {

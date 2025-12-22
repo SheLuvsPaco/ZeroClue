@@ -5,7 +5,8 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 import { useMessagesStore, Message } from '../state/messagesStore';
-import { messagesApi } from '../services/api';
+// ✅ FIXED: Import new API functions (aliased sendMessage to avoid name conflict)
+import { sendMessage as apiSendMessage, pullNewMessages, fetchHistory } from '../api';
 import { cacheMessages, getCachedMessages } from '../lib/cache';
 import { queueMessage, removeFromQueue, getMessagesToRetry, isOnline, onOnlineStatusChange } from '../lib/offline';
 
@@ -46,9 +47,9 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
       isRead: sender === myUsername, // Our own messages are "read"
       isDelivered: false,
     };
-    
+
     addMessage(chatId, message);
-    
+
     // Mark as read if it's for this chat
     if (chatId === sender || chatId === myUsername) {
       // Update read status when we receive it
@@ -61,13 +62,12 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
   // Poll for new messages
   const pollMessages = useCallback(async () => {
     try {
-      const messages = await messagesApi.pull();
-      
+      // ✅ FIXED: Use new API function
+      const messages = await pullNewMessages();
+
       // Process each message
       messages.forEach(msg => {
         // For now, assume messages are for the current chat
-        // In a real implementation, you'd need to determine which chat each message belongs to
-        // This might require additional API info or message metadata
         processIncomingMessage(msg, chatId, Date.now());
       });
     } catch (error) {
@@ -77,16 +77,15 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
 
   // Set up WebSocket connection (if available)
   const setupWebSocket = useCallback(() => {
-    // Try to connect via WebSocket
     const wsUrl = `ws://127.0.0.1:8080/ws`;
-    
+
     try {
       const ws = new WebSocket(wsUrl);
-      
+
       ws.onopen = () => {
         console.log('WebSocket connected');
       };
-      
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -97,27 +96,24 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
           console.error('Failed to parse WebSocket message:', error);
         }
       };
-      
+
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        // Fall back to polling
         if (enablePolling) {
           pollingRef.current = setInterval(pollMessages, pollingInterval);
         }
       };
-      
+
       ws.onclose = () => {
         console.log('WebSocket closed, falling back to polling');
-        // Fall back to polling
         if (enablePolling) {
           pollingRef.current = setInterval(pollMessages, pollingInterval);
         }
       };
-      
+
       wsRef.current = ws;
     } catch (error) {
       console.error('WebSocket not available, using polling:', error);
-      // Fall back to polling
       if (enablePolling) {
         pollingRef.current = setInterval(pollMessages, pollingInterval);
       }
@@ -126,15 +122,12 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
 
   // Set up polling/WebSocket
   useEffect(() => {
-    // Try WebSocket first, fall back to polling
     setupWebSocket();
-    
-    // If WebSocket setup fails, polling will start automatically
-    // Otherwise, start polling as backup
+
     if (enablePolling && !wsRef.current) {
       pollingRef.current = setInterval(pollMessages, pollingInterval);
     }
-    
+
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
@@ -150,10 +143,10 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
   // Send message with offline handling
   const sendMessage = useCallback(async (text: string): Promise<void> => {
     if (!text.trim()) return;
-    
+
     const messageId = `msg-${Date.now()}-${Math.random()}`;
     const timestamp = Date.now();
-    
+
     // Add message optimistically
     const message: Message = {
       id: messageId,
@@ -165,13 +158,14 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
       isDelivered: false,
       isOffline: !isOnline(), // Mark as offline if not connected
     };
-    
+
     addMessage(chatId, message);
-    
+
     // Try to send
     if (isOnline()) {
       try {
-        await messagesApi.send(chatId, text);
+        // ✅ FIXED: Use aliased API function
+        await apiSendMessage(chatId, text);
         updateMessage(chatId, messageId, { isDelivered: true, isOffline: false });
       } catch (error) {
         console.error('Failed to send message:', error);
@@ -197,7 +191,7 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
       updateMessage(chatId, messageId, { isOffline: true });
     }
   }, [chatId, myUsername, addMessage, updateMessage]);
-  
+
   // Retry queued messages on reconnect
   useEffect(() => {
     const unsubscribe = onOnlineStatusChange(async (online) => {
@@ -206,7 +200,8 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
         for (const queuedMsg of queued) {
           if (queuedMsg.chatId === chatId) {
             try {
-              await messagesApi.send(queuedMsg.chatId, queuedMsg.text);
+              // ✅ FIXED: Use aliased API function
+              await apiSendMessage(queuedMsg.chatId, queuedMsg.text);
               removeFromQueue(queuedMsg.id);
               updateMessage(chatId, queuedMsg.id, { isDelivered: true, isOffline: false });
             } catch (error) {
@@ -216,10 +211,10 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
         }
       }
     });
-    
+
     return unsubscribe;
   }, [chatId, updateMessage]);
-  
+
   // Hydrate from cache on mount
   useEffect(() => {
     const hydrate = async () => {
@@ -232,10 +227,10 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
         console.warn('Failed to hydrate messages from cache:', error);
       }
     };
-    
+
     hydrate();
   }, [chatId, addMessages]);
-  
+
   // Cache messages when they change
   useEffect(() => {
     const messages = getMessages(chatId);
@@ -244,20 +239,22 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
         console.warn('Failed to cache messages:', err);
       });
     }
-  }, [chatId, getMessages, dayGroups]);
+    // ✅ FIXED: Removed 'dayGroups' from dependency array to fix undefined error
+  }, [chatId, getMessages]);
 
   // Load older messages (pagination)
   const loadOlder = useCallback(async () => {
-    const cursors = store.getState().paginationCursors;
-    const loading = store.getState().isLoading;
-    const cursor = cursors.get(chatId);
-    
-    if (loading.get(chatId) || !cursor) return;
-    
+    // ✅ FIXED: Removed .getState(), used destructured variables
+    const cursor = paginationCursors.get(chatId);
+    const loading = isLoading.get(chatId);
+
+    if (loading || !cursor) return;
+
     setIsLoading(chatId, true);
     try {
-      const result = await messagesApi.getMessages(chatId, cursor);
-      
+      // ✅ FIXED: Use new fetchHistory API
+      const result = await fetchHistory(chatId, cursor);
+
       // Transform API messages to our format
       const messages: Message[] = result.messages.map((msg, idx) => ({
         id: msg.id || `msg-${msg.created_at}-${idx}`,
@@ -268,9 +265,9 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
         isRead: true,
         isDelivered: true,
       }));
-      
+
       addMessages(chatId, messages);
-      
+
       if (result.nextCursor) {
         setPaginationCursor(chatId, result.nextCursor);
       } else {
@@ -281,17 +278,17 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
     } finally {
       setIsLoading(chatId, false);
     }
-  }, [chatId, store, setIsLoading, setPaginationCursor, addMessages]);
+  }, [chatId, paginationCursors, isLoading, setIsLoading, setPaginationCursor, addMessages]);
 
   // Set typing indicator
   const setTypingIndicator = useCallback((isTyping: boolean) => {
     setTyping(chatId, myUsername, isTyping);
   }, [chatId, myUsername, setTyping]);
 
-  const currentTypingUsers = store.getState().typingUsers.get(chatId) || new Set();
-  const currentIsLoading = store.getState().isLoading.get(chatId) || false;
-  const currentCursors = store.getState().paginationCursors;
-  
+  // ✅ FIXED: Use destructured variables directly for return
+  const currentTypingUsers = typingUsers.get(chatId) || new Set();
+  const currentIsLoading = isLoading.get(chatId) || false;
+
   return {
     messages: getMessages(chatId),
     dayGroups: getDayGroups(chatId),
@@ -300,7 +297,6 @@ export function useMessages({ chatId, myUsername, enablePolling = true, pollingI
     sendMessage,
     loadOlder,
     setTypingIndicator,
-    hasMore: currentCursors.has(chatId),
+    hasMore: paginationCursors.has(chatId),
   };
 }
-

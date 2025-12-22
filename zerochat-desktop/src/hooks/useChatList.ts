@@ -4,7 +4,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { useChatListStore, Chat } from '../state/chatListStore';
-import { friendsApi } from '../services/api';
+import { getFriends } from '../api';
 import { formatChatListTime } from '../lib/time';
 import { cacheChatList, getCachedChatList } from '../lib/cache';
 
@@ -31,23 +31,23 @@ export function useChatList() {
     } catch (error) {
       console.warn('Failed to load cached chats:', error);
     }
-    
+
     // Then fetch from API and update
     try {
-      const friends = await friendsApi.list();
-      
+      const friends = await getFriends();
+
       // Validate response - empty array is valid for new users
       if (!Array.isArray(friends)) {
-        console.warn('[useChatList] friendsApi.list() returned invalid data (not an array):', friends);
+        console.warn('[useChatList] getFriends() returned invalid data (not an array):', friends);
         return;
       }
-      
+
       console.log(`[useChatList] Loaded ${friends.length} friends from API`);
-      
+
       // Filter to only accepted friendships
       const acceptedFriends = friends.filter(f => f && f.status === 'accepted');
       console.log(`[useChatList] ${acceptedFriends.length} accepted friendships`);
-      
+
       // Transform friends to chats
       const newChats: Chat[] = acceptedFriends.map(friend => ({
         id: friend.username,
@@ -56,7 +56,7 @@ export function useChatList() {
         pinned: false,
         muted: false,
       }));
-      
+
       setChats(newChats);
       await cacheChatList(newChats);
     } catch (error) {

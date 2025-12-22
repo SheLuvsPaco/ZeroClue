@@ -24,16 +24,16 @@ export async function pickFile(options?: {
     // Tauri file picker
     const { open } = await import('@tauri-apps/api/dialog');
     const { readBinaryFile } = await import('@tauri-apps/api/fs');
-    
+
     const selected = await open({
       multiple: options?.multiple || false,
       filters: options?.accept ? [{ name: 'Files', extensions: options.accept.split(',').map(e => e.trim()) }] : undefined,
     });
-    
+
     if (!selected) {
       throw new Error('No file selected');
     }
-    
+
     if (Array.isArray(selected)) {
       const results = await Promise.all(
         selected.map(async (path) => {
@@ -43,19 +43,20 @@ export async function pickFile(options?: {
             name: path.split('/').pop() || 'unknown',
             size: data.length,
             type: 'application/octet-stream',
-            data,
+            data: data.buffer as ArrayBuffer,
           };
         })
       );
       return results;
     } else {
+      // ... inside the else block ...
       const data = await readBinaryFile(selected as string);
       return {
         path: selected as string,
         name: (selected as string).split('/').pop() || 'unknown',
         size: data.length,
         type: 'application/octet-stream',
-        data,
+        data: data.buffer as ArrayBuffer,
       };
     }
   } else if (platform.isAndroid) {
@@ -71,14 +72,14 @@ export async function pickFile(options?: {
       if (options?.accept) {
         input.accept = options.accept;
       }
-      
+
       input.onchange = async (e) => {
         const files = (e.target as HTMLInputElement).files;
         if (!files || files.length === 0) {
           reject(new Error('No file selected'));
           return;
         }
-        
+
         const results = await Promise.all(
           Array.from(files).map(async (file) => {
             const arrayBuffer = await file.arrayBuffer();
@@ -90,14 +91,14 @@ export async function pickFile(options?: {
             };
           })
         );
-        
+
         resolve(options?.multiple ? results : results[0]);
       };
-      
+
       input.oncancel = () => {
         reject(new Error('File picker cancelled'));
       };
-      
+
       input.click();
     });
   }
@@ -110,13 +111,13 @@ export async function fileToBase64(file: FilePickResult): Promise<string> {
   if (typeof file.data === 'string') {
     return file.data;
   }
-  
+
   if (file.data instanceof ArrayBuffer) {
     const bytes = new Uint8Array(file.data);
     const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
     return btoa(binary);
   }
-  
+
   throw new Error('File data not available');
 }
 

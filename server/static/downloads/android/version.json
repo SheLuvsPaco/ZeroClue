@@ -1,5 +1,11 @@
+
 {
-  "latestVersion": "v10",
-  "downloadUrl": "/downloads/android/ZeroChat-v10.apk",
-  "releaseNotes": "Fix: V10 - Fire & Forget (No-Wait Login)."
+
+  "latestVersion": "v13.16",
+
+  "downloadUrl": "/downloads/android/ZeroChat-v13.15.apk",
+
+  "releaseNotes": "Fix: V13.16 - Race Condition Solved. Architecture Refactor Complete. Atomic Auth."
+
 }
+
