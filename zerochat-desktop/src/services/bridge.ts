@@ -5,198 +5,141 @@
 
 const SERVER_BASE = "http://127.0.0.1:8080";
 
-// Detect platform
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-const isAndroid = typeof window !== 'undefined' && 'ZeroChatBridge' in window;
-
 // Web fallback: localStorage-based credential storage
 const WEB_STORAGE_KEY = 'zerochat_web_creds';
-const WEB_BASE_URL_KEY = 'zerochat_web_base_url';
 
-function getWebStorage(): { device_id?: string; device_auth?: string; base_url?: string } {
-  try {
-    const stored = localStorage.getItem(WEB_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
-}
+// ✅ HELPER: Dynamic Platform Detection
+// We check this on every call to handle "Late Injection" by the Android WebView
+const getPlatform = () => {
+  if (typeof window === 'undefined') return 'web';
+  // Check for Tauri
+  if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) return 'tauri';
+  // Check for Android Bridge
+  if ('ZeroChatBridge' in window) return 'android';
 
-function setWebStorage(creds: { device_id?: string; device_auth?: string; base_url?: string }) {
-  try {
-    localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(creds));
-  } catch (e) {
-    console.warn('Failed to save credentials to localStorage:', e);
-  }
-}
+  return 'web';
+};
 
 // Unified invoke function
 export async function invoke<T = any>(cmd: string, args: any = {}): Promise<T> {
-  if (isTauri) {
-    const { invoke: tauriInvoke } = await import('@tauri-apps/api/tauri');
-    return tauriInvoke<T>(cmd, args);
-  } else if (isAndroid) {
+  const currentPlatform = getPlatform();
+
+  // 🟢 1. TAURI PATH
+  if (currentPlatform === 'tauri') {
+    try {
+      const { invoke: tauriInvoke } = await import('@tauri-apps/api/tauri');
+      return await tauriInvoke<T>(cmd, args);
+    } catch (e) {
+      console.error('[Bridge-Tauri] Import failed:', e);
+      throw e;
+    }
+  }
+
+  // 🟢 2. ANDROID PATH (The Critical Path)
+  else if (currentPlatform === 'android') {
     return new Promise((resolve, reject) => {
       try {
         const bridge = (window as any).ZeroChatBridge;
-        if (!bridge) {
-          reject(new Error('ZeroChatBridge not available'));
+
+        console.log(`[Bridge-Android] Invoking: ${cmd}`, args); // 🔍 Visible in Logcat
+
+        if (!bridge || typeof bridge.invoke !== 'function') {
+          console.error('[Bridge-Android] Bridge found but invoke method missing!');
+          reject(new Error('ZeroChatBridge.invoke is missing'));
           return;
         }
 
         const argsJson = JSON.stringify(args);
+
+        // Synchronous call to Java/Rust
+        // NOTE: If this hangs the UI, we may need to switch to async callbacks later
         const result = bridge.invoke(cmd, argsJson);
 
+        console.log(`[Bridge-Android] Result for ${cmd}:`, typeof result === 'string' ? result.substring(0, 50) + '...' : result);
+
+        // Handle String Responses (JSON)
         if (typeof result === 'string') {
+          // Check for explicit error object
           if (result.trim().startsWith('{"error":')) {
-            try {
-              const errorObj = JSON.parse(result);
-              reject(new Error(errorObj.error));
-              return;
-            } catch (e) {
-              reject(new Error(result));
-              return;
-            }
+            const errObj = JSON.parse(result);
+            reject(new Error(errObj.error || "Unknown Native Error"));
+            return;
           }
 
+          // Try parsing standard JSON result
           try {
-            resolve(JSON.parse(result));
-            return;
+            const parsed = JSON.parse(result);
+            resolve(parsed);
           } catch (e) {
+            // If strictly a string result, return clean string
             if (result.startsWith('"') && result.endsWith('"')) {
-              resolve(result.slice(1, -1) as T);
+              resolve(result.slice(1, -1) as unknown as T);
             } else {
-              resolve(result as T);
+              resolve(result as unknown as T);
             }
-            return;
           }
+        } else {
+          // Handle direct object returns (rare in WebView, but possible)
+          resolve(result);
         }
 
-        resolve(result);
       } catch (e: any) {
-        reject(new Error(e.message || e.toString()));
+        console.error(`[Bridge-Android] Critical Failure on ${cmd}:`, e);
+        reject(new Error(e.message || "Android Bridge Exception"));
       }
     });
-  } else {
-    // Web fallback - use localStorage and direct API calls
-    const storage = getWebStorage();
+  }
 
-    switch (cmd) {
-      case 'set_base':
-        storage.base_url = args.base || 'http://127.0.0.1:8080';
-        setWebStorage(storage);
-        return Promise.resolve('ok' as T);
-
-      case 'load_creds':
-        if (storage.device_id && storage.device_auth) {
-          return Promise.resolve({
-            device_id: storage.device_id,
-            device_auth: storage.device_auth,
-          } as T);
-        }
-        return Promise.resolve(null as T);
-
-      case 'signup':
-      case 'login': {
-        // For web, we'll handle auth via direct API calls in the hooks
-        // This is a placeholder - actual signup/login should use the API directly
-        return Promise.reject(new Error('Use API directly in web mode'));
-      }
-
-      case 'get_me': {
-        // Web mode: call /api/me directly
-        const creds = storage;
-        if (!creds.device_id || !creds.device_auth) {
-          return Promise.reject(new Error('Not authenticated'));
-        }
-
-        const baseUrl = creds.base_url || SERVER_BASE;
-        return fetch(`${baseUrl}/api/me`, {
-          method: 'GET',
-          headers: {
-            'x-device-id': creds.device_id,
-            'x-device-auth': creds.device_auth,
-          },
-        })
-          .then(async (response) => {
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            return response.json() as Promise<T>;
-          });
-      }
-
-      case 'friends_list': {
-        // Web mode: call /api/friends/list directly
-        // Note: This is handled by friendsApi.list() in api.ts now, but keeping for backward compatibility
-        const creds = storage;
-        if (!creds.device_id || !creds.device_auth) {
-          return Promise.resolve({ friends: [] } as T);
-        }
-
-        const baseUrl = creds.base_url || SERVER_BASE;
-        return fetch(`${baseUrl}/api/friends/list`, {
-          method: 'GET',
-          headers: {
-            'x-device-id': creds.device_id,
-            'x-device-auth': creds.device_auth,
-          },
-        })
-          .then(async (response) => {
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            // Server returns { friends: [...] }, return as-is
-            return response.json() as Promise<T>;
-          });
-      }
-
-      case 'create_invite': {
-        // Web mode: call /api/invite/create directly
-        const creds = storage;
-        if (!creds.device_id || !creds.device_auth) {
-          return Promise.reject(new Error('Not authenticated'));
-        }
-
-        const baseUrl = creds.base_url || SERVER_BASE;
-        const friendHint = args.friend_hint || null;
-        const ttlMinutes = args.ttl_minutes || 60;
-
-        return fetch(`${baseUrl}/api/invite/create`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-device-id': creds.device_id,
-            'x-device-auth': creds.device_auth,
-          },
-          body: JSON.stringify({
-            friend_hint: friendHint,
-            ttl_minutes: ttlMinutes,
-          }),
-        })
-          .then(async (response) => {
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            return response.json() as Promise<T>;
-          });
-      }
-
-      default:
-        // For other commands, return null or empty object
-        console.warn(`Web mode: command '${cmd}' not fully supported, using fallback`);
-        return Promise.resolve(null as T);
-    }
+  // 🔴 3. WEB FALLBACK (Development Mode)
+  else {
+    return handleWebFallback(cmd, args);
   }
 }
 
-// Platform-specific utilities
-export const platform = {
-  isTauri,
-  isAndroid,
-  isWeb: !isTauri && !isAndroid,
-};
+// ✅ UTILITY: Web Fallback Logic (Moved out to clean up main function)
+async function handleWebFallback<T>(cmd: string, args: any): Promise<T> {
+  const storage = getWebStorage();
+  console.warn(`[Bridge-Web] Fallback for: ${cmd}`);
 
+  switch (cmd) {
+    case 'set_base':
+      const newBase = args.base || 'http://127.0.0.1:8080';
+      setWebStorage({ ...storage, base_url: newBase });
+      return 'ok' as unknown as T;
+
+    case 'load_creds':
+      if (storage.device_id && storage.device_auth) {
+        return {
+          device_id: storage.device_id,
+          device_auth: storage.device_auth,
+        } as unknown as T;
+      }
+      return null as unknown as T;
+
+    // Web mode shouldn't handle complex logic here anymore
+    // It should rely on the API adapters directly.
+    default:
+      return null as unknown as T;
+  }
+}
+
+// Storage Helpers
+function getWebStorage() {
+  try {
+    const stored = localStorage.getItem(WEB_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch { return {}; }
+}
+
+function setWebStorage(creds: any) {
+  try {
+    localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(creds));
+  } catch (e) { }
+}
+
+// ✅ EXPORT PLATFORM UTILS (Using Getters for Freshness)
+export const platform = {
+  get isTauri() { return getPlatform() === 'tauri'; },
+  get isAndroid() { return getPlatform() === 'android'; },
+  get isWeb() { return getPlatform() === 'web'; },
+};

@@ -1,42 +1,59 @@
 import { platform } from '../services/bridge';
 import { AndroidAdapter } from './adapters/api.android';
-import { DesktopAdapter } from './adapters/api.desktop';
 import { WebAdapter } from './adapters/api.web';
 import { APIAdapter } from './interfaces';
 
-// Factory to select the right adapter based on the platform
+// ✅ HELPER: Lazy Adapter Selector
+// We call this every time a function is used, ensuring we catch the Bridge even if it loads late.
 const getAdapter = (): APIAdapter => {
     if (platform.isAndroid) {
-        console.log('[API] Using Android Adapter (Atomic)');
+        // console.log('[API] Using Android Adapter'); // Uncomment for debug noise
         return AndroidAdapter;
     }
+
+    // ✅ DEV FIX: Force WebAdapter on Desktop (Ngrok Bypass)
     if (platform.isTauri) {
-        console.log('[API] Using Desktop Adapter (Explicit)');
-        return DesktopAdapter;
+        return WebAdapter;
     }
-    console.log('[API] Using Web Adapter (Fetch)');
+
     return WebAdapter;
 };
 
-// Initialize the API
-const api = getAdapter();
+// =============================================================================
+// ✅ EXPORTS (Wrapped in functions to ensure latest adapter is used)
+// =============================================================================
 
-// Export individual functions so your React components don't need to change much
-export const checkHealth = api.checkHealth;
-export const setBaseUrl = api.setBaseUrl;
-export const signUp = api.auth.signup;
-export const logIn = api.auth.login;
-export const provisionWithToken = api.auth.provisionWithToken;
-export const getFriends = api.getFriends;
-export const sendFriendRequest = api.sendFriendRequest;
-export const respondFriendRequest = api.respondFriendRequest;
-export const sendMessage = api.sendMessage;
-export const createInviteLink = api.createInviteLink;
-export const getMe = api.getMe;
+export const checkHealth = async () => getAdapter().checkHealth();
+export const setBaseUrl = async (url: string) => getAdapter().setBaseUrl(url);
+
+// Auth
+export const signUp = async (u: string, p: string, t?: string, b?: string) => getAdapter().auth.signup(u, p, t, b);
+export const logIn = async (u: string, p: string) => getAdapter().auth.login(u, p);
+export const provisionWithToken = async (t: string, b?: string) => getAdapter().auth.provisionWithToken(t, b);
+
+// Friends
+export const getFriends = async () => getAdapter().getFriends();
+export const sendFriendRequest = async (id: string) => getAdapter().sendFriendRequest(id);
+export const respondFriendRequest = async (id: string, accept: boolean) => getAdapter().respondFriendRequest(id, accept);
+
+// Messaging
+export const sendMessage = async (to: string, content: string) => getAdapter().sendMessage(to, content);
+export const pullNewMessages = async (afterId?: string) => getAdapter().pullNewMessages(afterId);
+export const fetchHistory = async (friendId: string, beforeId?: string, limit?: number) => getAdapter().fetchHistory(friendId, beforeId, limit);
+
+// Misc
+export const createInviteLink = async (hint?: string, ttl?: number) => getAdapter().createInviteLink(hint, ttl);
+export const getMe = async () => getAdapter().getMe();
+
+// Types
 export type { UserProfile } from './interfaces';
-// ✅ Message Exports
-export const pullNewMessages = api.pullNewMessages;
-export const fetchHistory = api.fetchHistory;
 
-// Export the full object as default
-export default api;
+// Default Export (Proxy to ensure 'api.auth.login' usage also works lazily)
+const apiProxy = new Proxy({} as APIAdapter, {
+    get: (_target, prop) => {
+        const adapter = getAdapter();
+        return (adapter as any)[prop];
+    }
+});
+
+export default apiProxy;

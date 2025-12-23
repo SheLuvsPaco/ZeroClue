@@ -1,14 +1,24 @@
-// Define what a User looks like across all platforms
+// ✅ 1. Define Core Data Shapes
 export interface UserProfile {
+    user_id: string;      // Critical for React keys
     username: string;
     device_id: string;
+    device_auth?: string; // Optional (only present in local storage, not usually API)
+    is_friend?: boolean;  // useful for UI
 }
 
-// Define the Authentication methods specifically
+export interface Message {
+    id: string;
+    content: string;
+    sender_id: string;
+    timestamp: number;
+    conversation_id?: string;
+}
+
+// ✅ 2. Define Authentication Methods
 export interface AuthAPI {
     /**
      * Signs up a new user.
-     * @param inviteBaseUrl - Optional base URL from an invite link
      */
     signup(username: string, password: string, inviteToken?: string | null, inviteBaseUrl?: string | null): Promise<void>;
 
@@ -18,38 +28,38 @@ export interface AuthAPI {
     login(username: string, password: string): Promise<void>;
 
     /**
-     * Provisions a device using a token (e.g. from an Invite Link).
+     * Provisions a device using a token.
      */
     provisionWithToken(token: string, baseUrl?: string): Promise<void>;
 }
 
-// Define the Main Adapter Interface
-// Every platform file (android.ts, desktop.ts, web.ts) MUST export an object matching this type.
+// ✅ 3. Define the Main Adapter Interface
 export interface APIAdapter {
     // Nested Auth namespace
     auth: AuthAPI;
 
     // General Utilities
-    checkHealth(): Promise<string>;
+    checkHealth(): Promise<boolean>; // Changed to boolean for easier checks
     setBaseUrl(url: string): Promise<void>;
 
+    // User Operations
+    getMe(): Promise<UserProfile | null>;
+
     // Friend Operations
-    getFriends(): Promise<Array<{ username: string; status: string }>>;
+    getFriends(): Promise<{ friends: UserProfile[] }>;
     sendFriendRequest(toUser: string): Promise<void>;
     respondFriendRequest(fromUser: string, accept: boolean): Promise<void>;
 
     // Message Operations
-    // ... (Keep existing Friend Operations above) ...
+    sendMessage(toUser: string, text: string): Promise<any>;
 
-    // Message Operations
-    pullNewMessages(): Promise<string[]>;
-    fetchHistory(chatId: string, cursor?: string): Promise<{ messages: any[]; nextCursor?: string }>;
-    sendMessage(toUser: string, text: string): Promise<string>;
+    // ✅ Updated to support Efficient Syncing
+    pullNewMessages(afterId?: string): Promise<Message[]>;
 
-    // ... (Keep Invite & User Operations below) ...
-    sendMessage(toUser: string, text: string): Promise<string>;
+    // ✅ Updated to support Pagination
+    fetchHistory(friendId: string, beforeId?: string, limit?: number): Promise<Message[]>;
 
-    // Invite & User Operations
-    createInviteLink(ttlMinutes?: number): Promise<{ invite_link: string }>;
-    getMe(): Promise<UserProfile>;
+    // Invite Operations
+    // ✅ Updated to support "Friend Hints"
+    createInviteLink(friendHint?: string, ttlMinutes?: number): Promise<{ invite_token: string; invite_url: string }>;
 }

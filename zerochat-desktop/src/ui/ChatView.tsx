@@ -38,7 +38,9 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
   }, [dayGroups]);
 
   // Virtualization setup - flatten messages with day headers
+  // We explicitly type the virtual items array for safety
   const virtualItems: Array<{ type: 'day' | 'message'; date?: string; message?: any }> = [];
+
   dayGroups.forEach(group => {
     virtualItems.push({ type: 'day', date: group.date });
     group.messages.forEach(msg => {
@@ -78,8 +80,9 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
         )}
         <div className="flex-1">
           <h2 className="font-semibold text-[var(--text)]">{chatId}</h2>
+          {/* ✅ FIXED: Explicitly cast typingUsers to string[] to satisfy the strict Typing component */}
           {typingUsers.length > 0 && (
-            <Typing users={typingUsers} />
+            <Typing users={typingUsers as string[]} />
           )}
         </div>
       </div>
@@ -113,7 +116,7 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
           {/* Virtualized messages */}
           {virtualizer.getVirtualItems().map((virtualItem) => {
             const item = virtualItems[virtualItem.index];
-            
+
             if (item.type === 'day' && item.date) {
               return (
                 <div
@@ -134,7 +137,7 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
                 </div>
               );
             }
-            
+
             if (item.type === 'message' && item.message) {
               return (
                 <div
@@ -155,7 +158,7 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
                 </div>
               );
             }
-            
+
             return null;
           })}
 
@@ -178,4 +181,3 @@ export default function ChatView({ chatId, myUsername, onBack }: ChatViewProps) 
     </div>
   );
 }
-

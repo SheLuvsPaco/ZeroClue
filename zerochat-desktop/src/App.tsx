@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import AppShell from './ui/AppShell';
 import './ui/theme.css';
 import { useInviteToken } from './hooks/useInviteToken';
+// ✅ 1. IMPORT THE PROVIDER
+import { AuthProvider } from './hooks/useAuth';
 
 function App() {
   // Initialize invite token handler early
@@ -14,8 +16,12 @@ function App() {
     }
   }, [inviteToken]);
 
-  return <AppShell />;
+  return (
+    // ✅ 2. WRAP THE APP (This turns the lights on)
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
 }
 
 export default App;
-

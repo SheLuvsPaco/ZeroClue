@@ -1,60 +1,42 @@
 {
-  "$schema": "https://schema.tauri.app/config/1",
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Zerochat Desktop",
+  "version": "0.1.0",
+  "identifier": "com.redloop.zerochat",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
-    "distDir": "../dist"
+    "beforeDevCommand": "echo 'Skipping auto-start'",
+    "beforeBuildCommand": "echo 'Skipping dev start'",
+    "devUrl": "http://172.20.10.11:1420",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Zerochat Desktop",
-    "version": "0.1.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": true
-    },
-    "macOSPrivateApi": true,
-    "bundle": {
-      "active": true,
-      "identifier": "com.redloop.zerochat",
-      "category": "public.app-category.social-networking",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": null,
-        "frameworks": []
-      },
-      "windows": {
-        "webviewInstallMode": {
-          "type": "downloadBootstrapper"
-        },
-        "nsis": {
-          "installMode": "perMachine"
-        }
-      },
-      "targets": ["dmg"],
-      "icon": ["icons/icon.icns", "icons/icon.ico"],
-      "resources": []
-    },
+  "app": {
     "windows": [
       {
         "title": "ZeroChat Desktop",
         "width": 900,
         "height": 900
       }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "dmg"
     ],
-    "security": {
-      "csp": null,
-      "dangerousRemoteDomainIpcAccess": [
-        {
-          "domain": "localhost",
-          "windows": ["main"],
-          "enableTauriAPI": true
-        }
-      ]
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "frameworks": []
     },
-    "updater": {
-      "active": false
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine"
+      }
     }
   }
 }

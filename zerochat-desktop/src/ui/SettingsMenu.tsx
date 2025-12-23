@@ -11,13 +11,15 @@ interface SettingsMenuProps {
 }
 
 export default function SettingsMenu({ onClose }: SettingsMenuProps) {
+  // ✅ 1. Hooks must be at the top level
   const { user, logout, isAuthenticated } = useAuth();
+
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
-  // Log user data when settings opens
+  // ✅ 2. Logging Logic (Preserved)
   useEffect(() => {
     console.log('[SettingsMenu] ========== SETTINGS MENU OPENED ==========');
     console.log('[SettingsMenu] Full user object:', JSON.stringify(user, null, 2));
@@ -30,22 +32,15 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
       userType: typeof user,
       userString: String(user),
     });
+  }, [isAuthenticated, user]);
 
-    // ✅ FIX: Get device_id directly from the authenticated user object
-    // (We don't need to load creds manually anymore)
-    useEffect(() => {
-      if (user?.device_id) {
-        console.log('[SettingsMenu] Setting device_id from user:', user.device_id);
-        setDeviceId(user.device_id);
-      }
-    }, [user]);
-
-    // Also try to get device_id from user object if available
+  // ✅ 3. Device ID Logic (Preserved)
+  useEffect(() => {
     if (user?.device_id) {
-      console.log('[SettingsMenu] Found device_id in user object:', user.device_id);
+      console.log('[SettingsMenu] Setting device_id from user:', user.device_id);
       setDeviceId(user.device_id);
     }
-  }, [isAuthenticated, user]);
+  }, [user]);
 
   const handleCreateInvite = async () => {
     console.log('[SettingsMenu] Create invite link clicked');
@@ -65,9 +60,16 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
     setError('');
     try {
       console.log('[SettingsMenu] Calling userApi.createInvite()...');
-      const result = await createInviteLink(60);
-      console.log('[SettingsMenu] Invite link created:', result.invite_link ? 'success' : 'failed');
-      setInviteLink(result.invite_link);
+
+      // ✅ FIXED: The new signature is (friendHint?: string, ttlMinutes?: number).
+      // We pass 'undefined' for the hint to get to the TTL argument.
+      const result = await createInviteLink(undefined, 60);
+
+      // ✅ FIXED: The interface now returns 'invite_url' (or 'invite_token').
+      // We use 'invite_url' for the UI.
+      console.log('[SettingsMenu] Invite link created:', result.invite_url ? 'success' : 'failed');
+      setInviteLink(result.invite_url);
+
     } catch (e: any) {
       console.error('[SettingsMenu] Failed to create invite:', e);
       setError(e?.message || 'Failed to create invite link');
@@ -117,10 +119,8 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
                       // Try deviceId state first (from credentials), then user.device_id
                       const did = deviceId || (user as any)?.device_id || '';
                       if (!did) {
-                        console.warn('[SettingsMenu] No device_id available');
                         return 'loading...';
                       }
-                      // Handle both UUID string and regular string
                       const didStr = typeof did === 'string' ? did : String(did);
                       return didStr.length > 8 ? `${didStr.substring(0, 8)}...` : didStr;
                     })()}
@@ -191,4 +191,3 @@ export default function SettingsMenu({ onClose }: SettingsMenuProps) {
     </div>
   );
 }
-

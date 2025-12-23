@@ -5,11 +5,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ZeroChat</title>
+
+  <script>
+    // 🟢 Early Pulse Check
+    console.log("🟢 HTML Engine Started");
+
+    // 🚨 Global Error Catch (Fires before React even loads)
+    window.onerror = function (msg, url, line) {
+      alert("🚨 STARTUP ERROR:\n" + msg + "\n\nFile: " + url + "\nLine: " + line);
+      return false;
+    };
+  </script>
 </head>
 
 <body>
   <div id="root"></div>
-  <script type="module" src="./src/main.tsx"></script>
+
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 
 </html>

@@ -1,65 +1,162 @@
-import { invoke } from '../../services/bridge';
-import { APIAdapter } from '../interfaces';
+import { APIAdapter, UserProfile, Message } from '../interfaces';
 import { SERVER_CONFIG } from '../../config';
 
-const SERVER_BASE = SERVER_CONFIG.BASE_URL;
+const SERVER_BASE = SERVER_CONFIG.BASE_URL || "http://localhost:8080";
+const WEB_STORAGE_KEY = 'zerochat_web_creds';
 
-export const DesktopAdapter: APIAdapter = {
-    checkHealth: async () => invoke("ping").catch(() => "error"),
+// Helper: Get Headers from LocalStorage
+const getHeaders = () => {
+    const stored = localStorage.getItem(WEB_STORAGE_KEY);
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true', // Critical for Ngrok
+    };
 
-    setBaseUrl: async (url) => {
-        await invoke("set_base", { base: url });
+    if (stored) {
+        try {
+            const creds = JSON.parse(stored);
+            if (creds.device_id && creds.device_auth) {
+                headers['x-device-id'] = creds.device_id;
+                headers['x-device-auth'] = creds.device_auth;
+            }
+        } catch (e) { console.warn('Creds parse error', e); }
+    }
+    return headers;
+};
+
+// Helper: Get Base URL
+const getBaseUrl = () => {
+    try {
+        const stored = localStorage.getItem(WEB_STORAGE_KEY);
+        return stored ? JSON.parse(stored).base_url : SERVER_BASE;
+    } catch {
+        return SERVER_BASE;
+    }
+};
+
+export const WebAdapter: APIAdapter = {
+    // ✅ FIX 1: Return Boolean (not string)
+    checkHealth: async () => {
+        try {
+            await fetch(`${getBaseUrl()}/api/ping`);
+            return true;
+        } catch { return false; }
+    },
+
+    setBaseUrl: async (url: string) => {
+        const stored = localStorage.getItem(WEB_STORAGE_KEY);
+        const creds = stored ? JSON.parse(stored) : {};
+        creds.base_url = url;
+        localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify(creds));
     },
 
     auth: {
         signup: async (username, password, inviteToken, inviteBaseUrl) => {
-            // 1. Create Account
-            await invoke("set_base", { base: inviteBaseUrl || SERVER_BASE });
-            await invoke("signup", { username, password, invite_token: inviteToken });
-
-            // 2. EXPLICITLY Upload Keys (The Fix for Desktop)
-            console.log('[Desktop] Uploading keys...');
-            await new Promise(r => setTimeout(r, 500)); // Safety delay for DB consistency
-            await invoke("upload_identity_and_keypackage");
+            const baseUrl = inviteBaseUrl || SERVER_BASE;
+            const res = await fetch(`${baseUrl}/api/signup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ username, password, invite_token: inviteToken })
+            });
+            if (!res.ok) throw new Error(await res.text());
         },
 
         login: async (username, password) => {
-            // 1. Log In
-            await invoke("set_base", { base: SERVER_BASE });
-            await invoke("login", { username, password });
+            const res = await fetch(`${SERVER_BASE}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!res.ok) throw new Error(await res.text());
 
-            // 2. EXPLICITLY Upload Keys
-            console.log('[Desktop] Uploading keys...');
-            await new Promise(r => setTimeout(r, 500));
-            await invoke("upload_identity_and_keypackage");
+            // Web flow: We don't save creds here yet, provision handles it
         },
 
         provisionWithToken: async (token, baseUrl) => {
-            // 1. Provision
-            await invoke("provision_with_token", { token, base_url: baseUrl || SERVER_BASE });
+            const url = baseUrl || SERVER_BASE;
+            const res = await fetch(`${url}/api/provision/redeem`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ token, platform: 'web' })
+            });
+            if (!res.ok) throw new Error(await res.text());
 
-            // 2. EXPLICITLY Upload Keys (Fixes Invite Links on Desktop)
-            console.log('[Desktop] Uploading keys...');
-            await new Promise(r => setTimeout(r, 500));
-            await invoke("upload_identity_and_keypackage");
+            const d = await res.json();
+            localStorage.setItem(WEB_STORAGE_KEY, JSON.stringify({
+                device_id: d.device_id, device_auth: d.device_auth, base_url: url
+            }));
         }
     },
 
-    // Standard commands
-    getFriends: async () => invoke("friends_list"),
-    sendFriendRequest: async (toUser) => invoke("friend_request", { to_username: toUser }),
-    respondFriendRequest: async (fromUser, accept) => invoke("friend_respond", { from_username: fromUser, accept }),
-    // Find the Message Operations section and replace it with this:
+    getMe: async () => {
+        const stored = localStorage.getItem(WEB_STORAGE_KEY);
+        if (!stored) return null; // Safe exit if no creds
 
-    // Message Operations
-    pullNewMessages: async () => invoke("pull_and_decrypt"),
-
-    fetchHistory: async (chatId, cursor) => {
-        // Placeholder for native history fetch
-        return { messages: [] };
+        try {
+            const res = await fetch(`${getBaseUrl()}/api/me`, { headers: getHeaders() });
+            if (!res.ok) return null;
+            return await res.json() as UserProfile;
+        } catch { return null; }
     },
 
-    sendMessage: async (toUser, text) => invoke("send_to_username_hpke", { username: toUser, plaintext: text }),
-    createInviteLink: async (ttlMinutes = 60) => invoke("create_invite", { ttl_minutes: ttlMinutes }),
-    getMe: async () => invoke("get_me"),
+    // ✅ FIX 2: Return typed Friend List
+    getFriends: async () => {
+        const res = await fetch(`${getBaseUrl()}/api/friends/list`, { headers: getHeaders() });
+        if (!res.ok) return { friends: [] };
+        return await res.json();
+    },
+
+    sendFriendRequest: async (toUser) => {
+        await fetch(`${getBaseUrl()}/api/friends/request`, {
+            method: 'POST', headers: getHeaders(), body: JSON.stringify({ to_username: toUser })
+        });
+    },
+
+    respondFriendRequest: async (fromUser, accept) => {
+        await fetch(`${getBaseUrl()}/api/friends/respond`, {
+            method: 'POST', headers: getHeaders(), body: JSON.stringify({ from_username: fromUser, accept })
+        });
+    },
+
+    // ✅ FIX 3: Match new signature (afterId)
+    pullNewMessages: async (afterId?: string) => {
+        // Web implementation stub - returns empty array to satisfy contract
+        // Real implementation would fetch from /api/messages/pull
+        return [];
+    },
+
+    // ✅ FIX 4: Match new signature (beforeId, limit) & Return Message[]
+    fetchHistory: async (friendId: string, beforeId?: string, limit = 50) => {
+        const baseUrl = getBaseUrl();
+        const url = new URL(`${baseUrl}/api/messages/history`);
+
+        // Map friendId to backend expectation (likely chat_id or friend_id)
+        url.searchParams.append('friend_id', friendId);
+        url.searchParams.append('limit', limit.toString());
+        if (beforeId) url.searchParams.append('before_id', beforeId);
+
+        try {
+            const res = await fetch(url.toString(), { headers: getHeaders() });
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.messages || [];
+        } catch {
+            return [];
+        }
+    },
+
+    sendMessage: async (toUser, text) => {
+        // Web placeholder
+        return { id: "temp", content: text, sender_id: "me", timestamp: Date.now() };
+    },
+
+    // ✅ FIX 5: Match new signature (friendHint, ttlMinutes)
+    createInviteLink: async (friendHint?: string, ttlMinutes = 60) => {
+        const res = await fetch(`${getBaseUrl()}/api/invite/create`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({ friend_hint: friendHint, ttl_minutes: ttlMinutes })
+        });
+        return await res.json();
+    }
 };

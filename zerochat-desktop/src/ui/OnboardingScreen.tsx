@@ -18,8 +18,9 @@ export default function OnboardingScreen() {
     } catch (e) { }
   };
 
-  // ✅ CLEAN SIGNUP (Async & Responsive)
-  const handleSignup = async () => {
+  // ✅ CLEAN SIGNUP (No Reload)
+  const handleSignup = async (e?: any) => {
+    if (e) e.preventDefault(); // Stop defaults if triggered via form/button
     setError('');
     clearStaleData();
 
@@ -37,15 +38,14 @@ export default function OnboardingScreen() {
     try {
       console.log('[UI] Starting Async Signup...');
 
-      // 1. Send request (This returns a Promise immediately)
+      // 1. Send request
       await signup(username, password, inviteToken || undefined, inviteBaseUrl || undefined);
 
       console.log('[UI] Signup Success!');
 
-      // 2. Cleanup Invite Token if used
+      // 2. Cleanup Invite Token
       if (hasInviteToken) {
         clearToken();
-        // Clean URL without reloading
         if (typeof window !== 'undefined') {
           const url = new URL(window.location.href);
           url.searchParams.delete('token');
@@ -54,8 +54,7 @@ export default function OnboardingScreen() {
         }
       }
 
-      // 3. Enter App
-      window.location.reload();
+      // 3. NO RELOAD. useAuth will update state and AppShell will switch screens.
 
     } catch (e: any) {
       console.error('[UI] Signup Failed:', e);
@@ -64,8 +63,10 @@ export default function OnboardingScreen() {
     }
   };
 
-  // ✅ CLEAN LOGIN
-  const handleLogin = async () => {
+  // ✅ CLEAN LOGIN (No Reload)
+  const handleLogin = async (e?: any) => {
+    if (e) e.preventDefault(); // Stop defaults
+
     setError('');
     clearStaleData();
 
@@ -78,9 +79,14 @@ export default function OnboardingScreen() {
 
     try {
       console.log('[UI] Starting Async Login...');
+
+      // This triggers your alerts in api.web.ts
       await login(username, password);
+
       console.log('[UI] Login Success!');
-      window.location.reload();
+
+      // NO RELOAD. The app will transition automatically.
+
     } catch (e: any) {
       console.error('[UI] Login Failed:', e);
       setError(e.message || "Login failed");
@@ -113,9 +119,9 @@ export default function OnboardingScreen() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              // ✅ RESTORED: Enter key support
+              // ✅ FIXED: Enter key now triggers LOGIN (most likely intent)
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isLoading) handleSignup();
+                if (e.key === 'Enter' && !isLoading) handleLogin(e);
               }}
               disabled={isLoading}
               placeholder="Min 8 characters"
@@ -123,14 +129,12 @@ export default function OnboardingScreen() {
             />
           </div>
 
-          {/* Invite Token Banner */}
           {hasInviteToken && !isLoading && (
             <div className="bg-blue-900/30 text-blue-400 p-3 rounded-lg text-sm text-center border border-blue-800">
               📨 You have an invite link! Sign up to join.
             </div>
           )}
 
-          {/* Error Message */}
           {error && (
             <div className="bg-red-900/30 text-red-400 p-3 rounded-lg text-sm text-center border border-red-800">
               {error}
